@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>隨身抽菸紀錄器</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f5f5f7;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            max-width: 400px;
+            width: 100%;
+            background: white;
+            padding: 25px;
+            border-radius: 20px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+        }
+        h1 {
+            text-align: center;
+            color: #1d1d1f;
+            font-size: 22px;
+            margin-bottom: 5px;
+        }
+        .date-str {
+            text-align: center;
+            color: #86868b;
+            font-size: 14px;
+            margin-bottom: 25px;
+        }
+        .counter-box {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .label {
+            font-size: 14px;
+            color: #86868b;
+            text-transform: uppercase;
+        }
+        .count {
+            font-size: 64px;
+            font-weight: 700;
+            color: #ff453a;
+            margin: 10px 0;
+        }
+        .btn-smoke {
+            display: block;
+            width: 100%;
+            background: #1d1d1f;
+            color: white;
+            border: none;
+            padding: 16px;
+            font-size: 18px;
+            font-weight: 600;
+            border-radius: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn-smoke:active {
+            background: #555;
+            transform: scale(0.98);
+        }
+        .history {
+            margin-top: 30px;
+        }
+        .history-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1d1d1f;
+            margin-bottom: 12px;
+            border-bottom: 1px solid #e5e5ea;
+            padding-bottom: 8px;
+        }
+        .history-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #f5f5f7;
+            font-size: 15px;
+            color: #3a3a3c;
+        }
+        .btn-clear {
+            background: none;
+            border: none;
+            color: #ff453a;
+            cursor: pointer;
+            font-size: 13px;
+            margin-top: 25px;
+            width: 100%;
+            text-align: center;
+            opacity: 0.6;
+        }
+        .btn-clear:hover { opacity: 1; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🚬 抽菸紀錄器</h1>
+    <div class="date-str" id="currentDate"></div>
+
+    <div class="counter-box">
+        <div class="label">今日已抽</div>
+        <div class="count" id="smokeCount">0 <span style="font-size: 24px;">根</span></div>
+        <button class="btn-smoke" onclick="addSmoke()">現在抽一根</button>
+    </div>
+
+    <div class="history">
+        <div class="history-title">今日時間紀錄</div>
+        <ul class="history-list" id="historyList">
+            <!-- 紀錄會顯示在這裡 -->
+        </ul>
+    </div>
+
+    <button class="btn-clear" onclick="clearData()">清除所有歷史資料</button>
+</div>
+
+<script>
+    // 取得今天的日期字串 (YYYY-MM-DD)
+    function getTodayString() {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    // 初始化介面
+    document.getElementById('currentDate').innerText = new Date().toLocaleDateString('zh-TW', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+    // 從 LocalStorage 載入資料
+    let smokeData = JSON.parse(localStorage.getItem('smoke_tracker_data')) || {};
+
+    function updateDisplay() {
+        const today = getTodayString();
+        const todayRecords = smokeData[today] || [];
+        
+        // 更新數字
+        document.getElementById('smokeCount').innerHTML = `${todayRecords.length} <span style="font-size: 24px;">根</span>`;
+        
+        // 更新列表
+        const listEl = document.getElementById('historyList');
+        listEl.innerHTML = '';
+        
+        // 倒序顯示，最新抽的在最上面
+        [...todayRecords].reverse().forEach((time, index) => {
+            const li = document.createElement('li');
+            li.className = 'history-item';
+            li.innerHTML = `<span>第 ${todayRecords.length - index} 根</span> <span>${time}</span>`;
+            listEl.appendChild(li);
+        });
+    }
+
+    // 按下「抽一根」
+    function addSmoke() {
+        const today = getTodayString();
+        const now = new Date();
+        const timeString = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+        
+        if (!smokeData[today]) {
+            smokeData[today] = [];
+        }
+        
+        smokeData[today].push(timeString);
+        localStorage.setItem('smoke_tracker_data', JSON.stringify(smokeData));
+        updateDisplay();
+    }
+
+    // 清除資料
+    function clearData() {
+        if (confirm('確定要清除所有紀錄嗎？此操作無法復原。')) {
+            smokeData = {};
+            localStorage.removeItem('smoke_tracker_data');
+            updateDisplay();
+        }
+    }
+
+    // 首次載入畫面
+    updateDisplay();
+</script>
+
+</body>
+</html>
