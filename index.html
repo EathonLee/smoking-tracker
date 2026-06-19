@@ -104,6 +104,36 @@
             opacity: 0.6;
         }
         .btn-clear:hover { opacity: 1; }
+        .btn-smoke:disabled {
+            background: #c7c7cc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn-smoke:disabled:active {
+            background: #c7c7cc;
+            transform: none;
+        }
+        .cooldown-bar-wrap {
+            margin-top: 12px;
+            background: #e5e5ea;
+            border-radius: 8px;
+            height: 6px;
+            overflow: hidden;
+            display: none;
+        }
+        .cooldown-bar {
+            height: 100%;
+            background: #ff9f0a;
+            border-radius: 8px;
+            transition: width 1s linear;
+        }
+        .cooldown-hint {
+            text-align: center;
+            font-size: 13px;
+            color: #ff9f0a;
+            margin-top: 8px;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -115,7 +145,11 @@
     <div class="counter-box">
         <div class="label">今日已抽</div>
         <div class="count" id="smokeCount">0 <span style="font-size: 24px;">根</span></div>
-        <button class="btn-smoke" onclick="addSmoke()">現在抽一根</button>
+        <button class="btn-smoke" id="btnSmoke" onclick="addSmoke()">現在抽一根</button>
+        <div class="cooldown-bar-wrap" id="cooldownBarWrap">
+            <div class="cooldown-bar" id="cooldownBar"></div>
+        </div>
+        <div class="cooldown-hint" id="cooldownHint"></div>
     </div>
 
     <div class="history">
@@ -153,27 +187,88 @@
         listEl.innerHTML = '';
         
         // 倒序顯示，最新抽的在最上面
-        [...todayRecords].reverse().forEach((time, index) => {
+        [...todayRecords].reverse().forEach((record, index) => {
+            const { display } = parseRecord(record);
             const li = document.createElement('li');
             li.className = 'history-item';
-            li.innerHTML = `<span>第 ${todayRecords.length - index} 根</span> <span>${time}</span>`;
+            li.innerHTML = `<span>第 ${todayRecords.length - index} 根</span> <span>${display}</span>`;
             listEl.appendChild(li);
         });
     }
 
+    const COOLDOWN_MS = 60 * 60 * 1000; // 1 小時
+
+    function parseRecord(record) {
+        // 格式: "HH:MM:SS|ISO" (新) 或 "HH:MM:SS" (舊)
+        if (record.includes('|')) {
+            const [display, iso] = record.split('|');
+            return { display, ts: new Date(iso).getTime() };
+        }
+        const [h, m, s] = record.split(':').map(Number);
+        const d = new Date();
+        d.setHours(h, m, s, 0);
+        return { display: record, ts: d.getTime() };
+    }
+
+    function getLastSmokeTimestamp() {
+        const today = getTodayString();
+        const records = smokeData[today] || [];
+        if (records.length === 0) return null;
+        return parseRecord(records[records.length - 1]).ts;
+    }
+
+    function getRemainingMs() {
+        const last = getLastSmokeTimestamp();
+        if (last === null) return 0;
+        return Math.max(0, COOLDOWN_MS - (Date.now() - last));
+    }
+
+    function formatCountdown(ms) {
+        const totalSec = Math.ceil(ms / 1000);
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
+        return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    function updateCooldownUI() {
+        const remaining = getRemainingMs();
+        const btn = document.getElementById('btnSmoke');
+        const barWrap = document.getElementById('cooldownBarWrap');
+        const bar = document.getElementById('cooldownBar');
+        const hint = document.getElementById('cooldownHint');
+
+        if (remaining > 0) {
+            btn.disabled = true;
+            btn.textContent = `⏳ 請等候 ${formatCountdown(remaining)}`;
+            barWrap.style.display = 'block';
+            hint.style.display = 'block';
+            hint.textContent = '一小時只能抽一根，請耐心等候 🙏';
+            const pct = ((COOLDOWN_MS - remaining) / COOLDOWN_MS * 100).toFixed(1);
+            bar.style.width = pct + '%';
+        } else {
+            btn.disabled = false;
+            btn.textContent = '現在抽一根';
+            barWrap.style.display = 'none';
+            hint.style.display = 'none';
+        }
+    }
+
     // 按下「抽一根」
     function addSmoke() {
+        if (getRemainingMs() > 0) return;
+
         const today = getTodayString();
         const now = new Date();
-        const timeString = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-        
-        if (!smokeData[today]) {
-            smokeData[today] = [];
-        }
-        
-        smokeData[today].push(timeString);
+        // 儲存完整 ISO 時間以便計算一小時冷卻
+        const isoString = now.toISOString();
+        const displayTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
+        if (!smokeData[today]) smokeData[today] = [];
+        // 以 "HH:MM:SS|ISO" 格式儲存，向下相容舊顯示邏輯
+        smokeData[today].push(`${displayTime}|${isoString}`);
         localStorage.setItem('smoke_tracker_data', JSON.stringify(smokeData));
         updateDisplay();
+        updateCooldownUI();
     }
 
     // 清除資料
@@ -182,11 +277,14 @@
             smokeData = {};
             localStorage.removeItem('smoke_tracker_data');
             updateDisplay();
+            updateCooldownUI();
         }
     }
 
     // 首次載入畫面
     updateDisplay();
+    updateCooldownUI();
+    setInterval(updateCooldownUI, 1000);
 </script>
 
 </body>
