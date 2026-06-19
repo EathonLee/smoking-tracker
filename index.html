@@ -275,6 +275,9 @@
     ? 'http://localhost:8787'
     : 'https://smoking-tracker.eathon601.workers.dev';
 
+  // minutes east of UTC (e.g. 480 for UTC+8 Taiwan)
+  const TZ_OFFSET = -new Date().getTimezoneOffset();
+
   function getDeviceId() {
     let id = localStorage.getItem('device_id');
     if (!id) { id = crypto.randomUUID(); localStorage.setItem('device_id', id); }
@@ -344,7 +347,7 @@
   // ── Load ───────────────────────────────────────────────────────────────────
   async function loadToday() {
     try {
-      const data = await api('GET', `/smoke/today?date=${getTodayString()}`);
+      const data = await api('GET', `/smoke/today?date=${getTodayString()}&tz_offset=${TZ_OFFSET}`);
       todayRecords = data.records ?? [];
     } catch {}
     updateCounterUI();
@@ -445,17 +448,16 @@
     else await renderDailyChart();
   }
 
-  async function renderHourlyChart() {
-    try {
-      const data = await api('GET', `/smoke/stats/hourly?date=${getTodayString()}`);
-      drawBarChart(Array.from({length:24}, (_,h) => `${h}時`), data.counts, '#ff453a');
-    } catch {}
+  function renderHourlyChart() {
+    const counts = new Array(24).fill(0);
+    todayRecords.forEach(iso => { counts[new Date(iso).getHours()]++; });
+    drawBarChart(Array.from({length:24}, (_,h) => `${h}時`), counts, '#ff453a');
   }
 
   async function renderDailyChart() {
     try {
       const month = getCurrentMonth();
-      const data = await api('GET', `/smoke/stats/daily?month=${month}`);
+      const data = await api('GET', `/smoke/stats/daily?month=${month}&tz_offset=${TZ_OFFSET}`);
       const days = new Date(new Date().getFullYear(), new Date().getMonth()+1, 0).getDate();
       const labels = Array.from({length:days}, (_,i) => `${i+1}日`);
       const counts = labels.map((_,i) => data.counts[`${month}-${String(i+1).padStart(2,'0')}`] ?? 0);
@@ -497,7 +499,7 @@
     const btn = document.getElementById('btnExport');
     btn.disabled = true; btn.textContent = '準備中…';
     try {
-      const data = await api('POST', '/export', {});
+      const data = await api('POST', '/export', { tz_offset: TZ_OFFSET });
       const pad = s => String(s).padStart(2, '0');
       const rows = Array.from({ length: 12 }, (_, i) => {
         const month = `${data.year}-${pad(i + 1)}`;
@@ -513,7 +515,7 @@
         '─────────────────',
         `共計         ${String(data.total).padStart(3)} 根`,
       ].join('\n');
-      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const blob = new Blob(['﻿' + text], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
