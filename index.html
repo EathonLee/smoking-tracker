@@ -1,290 +1,565 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>隨身抽菸紀錄器</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: #f5f5f7;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            justify-content: center;
-        }
-        .container {
-            max-width: 400px;
-            width: 100%;
-            background: white;
-            padding: 25px;
-            border-radius: 20px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.08);
-        }
-        h1 {
-            text-align: center;
-            color: #1d1d1f;
-            font-size: 22px;
-            margin-bottom: 5px;
-        }
-        .date-str {
-            text-align: center;
-            color: #86868b;
-            font-size: 14px;
-            margin-bottom: 25px;
-        }
-        .counter-box {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .label {
-            font-size: 14px;
-            color: #86868b;
-            text-transform: uppercase;
-        }
-        .count {
-            font-size: 64px;
-            font-weight: 700;
-            color: #ff453a;
-            margin: 10px 0;
-        }
-        .btn-smoke {
-            display: block;
-            width: 100%;
-            background: #1d1d1f;
-            color: white;
-            border: none;
-            padding: 16px;
-            font-size: 18px;
-            font-weight: 600;
-            border-radius: 14px;
-            cursor: pointer;
-            transition: all 0.2s;
-            -webkit-tap-highlight-color: transparent;
-        }
-        .btn-smoke:active {
-            background: #555;
-            transform: scale(0.98);
-        }
-        .history {
-            margin-top: 30px;
-        }
-        .history-title {
-            font-size: 16px;
-            font-weight: 600;
-            color: #1d1d1f;
-            margin-bottom: 12px;
-            border-bottom: 1px solid #e5e5ea;
-            padding-bottom: 8px;
-        }
-        .history-list {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        .history-item {
-            display: flex;
-            justify-content: space-between;
-            padding: 10px 0;
-            border-bottom: 1px solid #f5f5f7;
-            font-size: 15px;
-            color: #3a3a3c;
-        }
-        .btn-clear {
-            background: none;
-            border: none;
-            color: #ff453a;
-            cursor: pointer;
-            font-size: 13px;
-            margin-top: 25px;
-            width: 100%;
-            text-align: center;
-            opacity: 0.6;
-        }
-        .btn-clear:hover { opacity: 1; }
-        .btn-smoke:disabled {
-            background: #c7c7cc;
-            cursor: not-allowed;
-            transform: none;
-        }
-        .btn-smoke:disabled:active {
-            background: #c7c7cc;
-            transform: none;
-        }
-        .cooldown-bar-wrap {
-            margin-top: 12px;
-            background: #e5e5ea;
-            border-radius: 8px;
-            height: 6px;
-            overflow: hidden;
-            display: none;
-        }
-        .cooldown-bar {
-            height: 100%;
-            background: #ff9f0a;
-            border-radius: 8px;
-            transition: width 1s linear;
-        }
-        .cooldown-hint {
-            text-align: center;
-            font-size: 13px;
-            color: #ff9f0a;
-            margin-top: 8px;
-            display: none;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>抽菸紀錄器</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" integrity="sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt" crossorigin="anonymous"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f7;
+      margin: 0;
+      padding: env(safe-area-inset-top, 20px) 16px env(safe-area-inset-bottom, 20px);
+      display: flex;
+      justify-content: center;
+    }
+
+    .container { max-width: 420px; width: 100%; }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      min-height: 48px;
+    }
+    .header-center { text-align: center; flex: 1; }
+    .header-center h1 { font-size: 22px; color: #1d1d1f; margin: 0 0 4px; }
+    .header-center .date-str { font-size: 14px; color: #86868b; }
+    .header-center .page-title { font-size: 18px; font-weight: 600; color: #1d1d1f; margin: 0; }
+
+    .btn-icon {
+      width: 38px;
+      height: 38px;
+      background: white;
+      border: none;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+      font-size: 18px;
+      flex-shrink: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-icon:active { opacity: 0.7; }
+    .btn-icon.invisible { visibility: hidden; pointer-events: none; }
+
+    /* ── Card ── */
+    .card {
+      background: white;
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.07);
+      margin-bottom: 14px;
+    }
+
+    /* ── View tabs ── */
+    .view-tabs {
+      display: flex;
+      background: #f0f0f3;
+      border-radius: 9px;
+      padding: 3px;
+      margin-bottom: 18px;
+    }
+    .view-tab {
+      flex: 1;
+      text-align: center;
+      padding: 6px 0;
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: 7px;
+      cursor: pointer;
+      color: #86868b;
+      transition: all 0.2s;
+      background: none;
+      border: none;
+      font-family: inherit;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .view-tab.active { background: white; color: #1d1d1f; box-shadow: 0 1px 4px rgba(0,0,0,0.10); }
+
+    /* ── Counter ── */
+    .counter-box { text-align: center; }
+    .count-label { font-size: 13px; font-weight: 600; color: #86868b; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+    .count { font-size: 72px; font-weight: 700; color: #ff453a; line-height: 1; margin: 4px 0 18px; }
+    .count span { font-size: 26px; }
+
+    /* ── Smoke button ── */
+    .btn-smoke {
+      display: block;
+      width: 100%;
+      background: #1d1d1f;
+      color: white;
+      border: none;
+      padding: 16px;
+      font-size: 18px;
+      font-weight: 600;
+      border-radius: 14px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .btn-smoke:active:not(:disabled) { background: #444; transform: scale(0.98); }
+    .btn-smoke:disabled { background: #c7c7cc; cursor: not-allowed; }
+
+    /* ── Cooldown ── */
+    .cooldown-wrap { margin-top: 12px; display: none; }
+    .cooldown-bar-bg { background: #e5e5ea; border-radius: 6px; height: 6px; overflow: hidden; }
+    .cooldown-bar { height: 100%; background: #ff9f0a; border-radius: 6px; transition: width 1s linear; }
+    .cooldown-hint { text-align: center; font-size: 13px; color: #ff9f0a; margin-top: 6px; }
+
+    /* ── History ── */
+    .history-title {
+      font-size: 13px; font-weight: 600; color: #86868b;
+      text-transform: uppercase; letter-spacing: 0.04em;
+      margin: 20px 0 10px; padding-top: 16px; border-top: 1px solid #f0f0f3;
+    }
+    .history-list { list-style: none; padding: 0; margin: 0; max-height: 200px; overflow-y: auto; }
+    .history-item {
+      display: flex; justify-content: space-between;
+      padding: 9px 0; border-bottom: 1px solid #f0f0f3;
+      font-size: 15px; color: #3a3a3c;
+    }
+    .history-item:last-child { border-bottom: none; }
+
+    /* ── Chart view ── */
+    .chart-view { position: relative; padding-top: 38px; }
+    .chart-select {
+      position: absolute; top: 0; right: 0;
+      appearance: none;
+      background: #f0f0f3 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2386868b' d='M6 8L1 3h10z'/%3E%3C/svg%3E") no-repeat right 10px center;
+      border: none; border-radius: 9px;
+      padding: 6px 28px 6px 12px;
+      font-size: 13px; font-weight: 500; color: #1d1d1f;
+      font-family: inherit; cursor: pointer; outline: none;
+    }
+    .chart-wrap { position: relative; height: 200px; }
+
+    /* ── Settings page ── */
+    .setting-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 0; border-bottom: 1px solid #f0f0f3;
+    }
+    .setting-row:last-child { border-bottom: none; }
+    .setting-label { font-size: 15px; color: #1d1d1f; }
+    .setting-sub { font-size: 12px; color: #86868b; margin-top: 2px; }
+    .setting-input {
+      width: 72px; border: 1.5px solid #e5e5ea; border-radius: 8px;
+      padding: 6px 10px; font-size: 15px; text-align: center;
+      color: #1d1d1f; outline: none;
+    }
+    .setting-input:focus { border-color: #0071e3; }
+
+    .export-section { padding: 14px 0; }
+    .export-section-label { font-size: 15px; color: #1d1d1f; margin-bottom: 10px; }
+    .btn-export {
+      display: block; width: 100%;
+      background: #0071e3; color: white; border: none; border-radius: 10px;
+      padding: 12px 16px; font-size: 15px; font-weight: 600; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-export:active { opacity: 0.8; }
+    .btn-export:disabled { background: #c7c7cc; cursor: not-allowed; }
+    .export-hint { font-size: 12px; color: #86868b; margin-top: 6px; }
+
+    /* ── Clear button ── */
+    .btn-clear {
+      display: block; width: 100%; background: none; border: none;
+      color: #ff453a; font-size: 13px; cursor: pointer;
+      text-align: center; padding: 4px 0; opacity: 0.6;
+    }
+    .btn-clear:hover { opacity: 1; }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed;
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
+      left: 50%; transform: translateX(-50%) translateY(80px);
+      background: #1d1d1f; color: white;
+      padding: 10px 20px; border-radius: 20px;
+      font-size: 14px; transition: transform 0.3s ease;
+      z-index: 200; white-space: nowrap;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+  </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>🚬 抽菸紀錄器</h1>
-    <div class="date-str" id="currentDate"></div>
 
-    <div class="counter-box">
-        <div class="label">今日已抽</div>
-        <div class="count" id="smokeCount">0 <span style="font-size: 24px;">根</span></div>
-        <button class="btn-smoke" id="btnSmoke" onclick="addSmoke()">現在抽一根</button>
-        <div class="cooldown-bar-wrap" id="cooldownBarWrap">
-            <div class="cooldown-bar" id="cooldownBar"></div>
+  <!-- Header -->
+  <div class="header">
+    <button class="btn-icon invisible" id="btnBack" type="button" aria-label="返回">‹</button>
+    <div class="header-center" id="headerCenter">
+      <h1>🚬 抽菸紀錄器</h1>
+      <div class="date-str" id="currentDate"></div>
+    </div>
+    <button class="btn-icon" id="btnGear" type="button" aria-label="設定">⚙️</button>
+  </div>
+
+  <!-- ── 主頁面 ── -->
+  <div id="pageMain">
+    <div class="card">
+      <div class="view-tabs">
+        <button class="view-tab active" id="viewTabRecord" type="button">今日紀錄</button>
+        <button class="view-tab" id="viewTabChart" type="button">圖表</button>
+      </div>
+
+      <!-- 今日紀錄 -->
+      <div id="viewRecord">
+        <div class="counter-box">
+          <div class="count-label">今日已抽</div>
+          <div class="count" id="smokeCount">0 <span>根</span></div>
+          <button class="btn-smoke" id="btnSmoke" type="button">現在抽一根</button>
+          <div class="cooldown-wrap" id="cooldownWrap">
+            <div class="cooldown-bar-bg">
+              <div class="cooldown-bar" id="cooldownBar"></div>
+            </div>
+            <div class="cooldown-hint" id="cooldownHint"></div>
+          </div>
         </div>
-        <div class="cooldown-hint" id="cooldownHint"></div>
-    </div>
-
-    <div class="history">
         <div class="history-title">今日時間紀錄</div>
-        <ul class="history-list" id="historyList">
-            <!-- 紀錄會顯示在這裡 -->
-        </ul>
+        <ul class="history-list" id="historyList"></ul>
+      </div>
+
+      <!-- 圖表 -->
+      <div id="viewChart" style="display:none">
+        <div class="chart-view">
+          <select class="chart-select" id="chartSelect">
+            <option value="hourly">今日</option>
+            <option value="daily">本月</option>
+          </select>
+          <div class="chart-wrap">
+            <canvas id="chartCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 設定頁面 ── -->
+  <div id="pageSettings" style="display:none">
+    <div class="card">
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">抽菸間距（小時）</div>
+          <div class="setting-sub">設為 0 表示不限制</div>
+        </div>
+        <input class="setting-input" type="number" id="cooldownInput" min="0" step="0.5" value="1">
+      </div>
+
+      <div class="export-section">
+        <div class="export-section-label">匯出紀錄</div>
+        <button class="btn-export" id="btnExport" type="button">下載統計資料</button>
+        <div class="export-hint">將過去一年每月抽菸次數匯出為文字檔</div>
+      </div>
     </div>
 
-    <button class="btn-clear" onclick="clearData()">清除所有歷史資料</button>
+    <button class="btn-clear" id="btnClear" type="button">清除所有歷史資料</button>
+  </div>
+
 </div>
 
-<script>
-    // 取得今天的日期字串 (YYYY-MM-DD)
-    function getTodayString() {
-        const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  const WORKER_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.protocol === 'file:')
+    ? 'http://localhost:8787'
+    : 'https://smoking-tracker.eathon601.workers.dev';
+
+  function getDeviceId() {
+    let id = localStorage.getItem('device_id');
+    if (!id) { id = crypto.randomUUID(); localStorage.setItem('device_id', id); }
+    return id;
+  }
+  const DEVICE_ID = getDeviceId();
+
+  async function api(method, path, body) {
+    const res = await fetch(`${WORKER_URL}${path}`, {
+      method,
+      headers: { 'x-device-id': DEVICE_ID, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? `HTTP ${res.status}`); }
+    return res.json();
+  }
+
+  let todayRecords = [];
+  let cooldownHours = 1;
+  let activeChart = 'hourly';
+  let chartInstance = null;
+
+  function getTodayString() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  function getCurrentMonth() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+  function formatTime(iso) {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+  }
+  function formatCountdown(ms) {
+    const s = Math.ceil(ms / 1000);
+    return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+  }
+
+  let toastTimer;
+  function showToast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+  }
+
+  // ── Page navigation ─────────────────────────────────────────────────────────
+  function showPage(page) {
+    const isMain = page === 'main';
+    document.getElementById('pageMain').style.display = isMain ? '' : 'none';
+    document.getElementById('pageSettings').style.display = isMain ? 'none' : '';
+    document.getElementById('btnBack').classList.toggle('invisible', isMain);
+    document.getElementById('btnGear').classList.toggle('invisible', !isMain);
+
+    const center = document.getElementById('headerCenter');
+    if (isMain) {
+      center.innerHTML = '<h1>🚬 抽菸紀錄器</h1><div class="date-str" id="currentDate"></div>';
+      document.getElementById('currentDate').textContent =
+        new Date().toLocaleDateString('zh-TW', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    } else {
+      center.innerHTML = '<p class="page-title">設定</p>';
     }
+  }
 
-    // 初始化介面
-    document.getElementById('currentDate').innerText = new Date().toLocaleDateString('zh-TW', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-
-    // 從 LocalStorage 載入資料
-    let smokeData = JSON.parse(localStorage.getItem('smoke_tracker_data')) || {};
-
-    function updateDisplay() {
-        const today = getTodayString();
-        const todayRecords = smokeData[today] || [];
-        
-        // 更新數字
-        document.getElementById('smokeCount').innerHTML = `${todayRecords.length} <span style="font-size: 24px;">根</span>`;
-        
-        // 更新列表
-        const listEl = document.getElementById('historyList');
-        listEl.innerHTML = '';
-        
-        // 倒序顯示，最新抽的在最上面
-        [...todayRecords].reverse().forEach((record, index) => {
-            const { display } = parseRecord(record);
-            const li = document.createElement('li');
-            li.className = 'history-item';
-            li.innerHTML = `<span>第 ${todayRecords.length - index} 根</span> <span>${display}</span>`;
-            listEl.appendChild(li);
-        });
-    }
-
-    const COOLDOWN_MS = 60 * 60 * 1000; // 1 小時
-
-    function parseRecord(record) {
-        // 格式: "HH:MM:SS|ISO" (新) 或 "HH:MM:SS" (舊)
-        if (record.includes('|')) {
-            const [display, iso] = record.split('|');
-            return { display, ts: new Date(iso).getTime() };
-        }
-        const [h, m, s] = record.split(':').map(Number);
-        const d = new Date();
-        d.setHours(h, m, s, 0);
-        return { display: record, ts: d.getTime() };
-    }
-
-    function getLastSmokeTimestamp() {
-        const today = getTodayString();
-        const records = smokeData[today] || [];
-        if (records.length === 0) return null;
-        return parseRecord(records[records.length - 1]).ts;
-    }
-
-    function getRemainingMs() {
-        const last = getLastSmokeTimestamp();
-        if (last === null) return 0;
-        return Math.max(0, COOLDOWN_MS - (Date.now() - last));
-    }
-
-    function formatCountdown(ms) {
-        const totalSec = Math.ceil(ms / 1000);
-        const m = Math.floor(totalSec / 60);
-        const s = totalSec % 60;
-        return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    }
-
-    function updateCooldownUI() {
-        const remaining = getRemainingMs();
-        const btn = document.getElementById('btnSmoke');
-        const barWrap = document.getElementById('cooldownBarWrap');
-        const bar = document.getElementById('cooldownBar');
-        const hint = document.getElementById('cooldownHint');
-
-        if (remaining > 0) {
-            btn.disabled = true;
-            btn.textContent = `⏳ 請等候 ${formatCountdown(remaining)}`;
-            barWrap.style.display = 'block';
-            hint.style.display = 'block';
-            hint.textContent = '一小時只能抽一根，請耐心等候 🙏';
-            const pct = ((COOLDOWN_MS - remaining) / COOLDOWN_MS * 100).toFixed(1);
-            bar.style.width = pct + '%';
-        } else {
-            btn.disabled = false;
-            btn.textContent = '現在抽一根';
-            barWrap.style.display = 'none';
-            hint.style.display = 'none';
-        }
-    }
-
-    // 按下「抽一根」
-    function addSmoke() {
-        if (getRemainingMs() > 0) return;
-
-        const today = getTodayString();
-        const now = new Date();
-        // 儲存完整 ISO 時間以便計算一小時冷卻
-        const isoString = now.toISOString();
-        const displayTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-
-        if (!smokeData[today]) smokeData[today] = [];
-        // 以 "HH:MM:SS|ISO" 格式儲存，向下相容舊顯示邏輯
-        smokeData[today].push(`${displayTime}|${isoString}`);
-        localStorage.setItem('smoke_tracker_data', JSON.stringify(smokeData));
-        updateDisplay();
-        updateCooldownUI();
-    }
-
-    // 清除資料
-    function clearData() {
-        if (confirm('確定要清除所有紀錄嗎？此操作無法復原。')) {
-            smokeData = {};
-            localStorage.removeItem('smoke_tracker_data');
-            updateDisplay();
-            updateCooldownUI();
-        }
-    }
-
-    // 首次載入畫面
-    updateDisplay();
+  // ── Load ───────────────────────────────────────────────────────────────────
+  async function loadToday() {
+    try {
+      const data = await api('GET', `/smoke/today?date=${getTodayString()}`);
+      todayRecords = data.records ?? [];
+    } catch {}
+    updateCounterUI();
+    updateHistoryUI();
     updateCooldownUI();
-    setInterval(updateCooldownUI, 1000);
+  }
+
+  async function loadSettings() {
+    try {
+      const data = await api('GET', '/settings');
+      cooldownHours = data.cooldown_hours ?? 1;
+      document.getElementById('cooldownInput').value = cooldownHours;
+    } catch {}
+  }
+
+  function updateCounterUI() {
+    document.getElementById('smokeCount').innerHTML = `${todayRecords.length} <span>根</span>`;
+  }
+
+  function updateHistoryUI() {
+    const list = document.getElementById('historyList');
+    list.innerHTML = '';
+    if (todayRecords.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'history-item';
+      li.style.cssText = 'color:#86868b;justify-content:center;';
+      li.textContent = '今天還沒抽';
+      list.appendChild(li);
+      return;
+    }
+    [...todayRecords].reverse().forEach((iso, i) => {
+      const li = document.createElement('li');
+      li.className = 'history-item';
+      li.innerHTML = `<span>第 ${todayRecords.length - i} 根</span><span>${formatTime(iso)}</span>`;
+      list.appendChild(li);
+    });
+  }
+
+  function getRemainingMs() {
+    if (cooldownHours <= 0 || todayRecords.length === 0) return 0;
+    const last = new Date(todayRecords[todayRecords.length - 1]).getTime();
+    return Math.max(0, cooldownHours * 3_600_000 - (Date.now() - last));
+  }
+
+  function updateCooldownUI() {
+    const remaining = getRemainingMs();
+    const cooldownMs = cooldownHours * 3_600_000;
+    const btn = document.getElementById('btnSmoke');
+    const wrap = document.getElementById('cooldownWrap');
+    const bar = document.getElementById('cooldownBar');
+    const hint = document.getElementById('cooldownHint');
+    if (remaining > 0) {
+      btn.disabled = true;
+      btn.textContent = `⏳ 請等候 ${formatCountdown(remaining)}`;
+      wrap.style.display = 'block';
+      bar.style.width = ((cooldownMs - remaining) / cooldownMs * 100).toFixed(1) + '%';
+      hint.textContent = `距下一根還有 ${(remaining / 3_600_000).toFixed(1)} 小時`;
+    } else {
+      btn.disabled = false;
+      btn.textContent = '現在抽一根';
+      wrap.style.display = 'none';
+    }
+  }
+
+  async function addSmoke() {
+    if (getRemainingMs() > 0) return;
+    const btn = document.getElementById('btnSmoke');
+    btn.disabled = true; btn.textContent = '記錄中…';
+    try {
+      const iso = new Date().toISOString();
+      await api('POST', '/smoke', { smoked_at: iso });
+      todayRecords.push(iso);
+      updateCounterUI(); updateHistoryUI(); updateCooldownUI();
+      showToast('已記錄 ✓');
+    } catch (e) {
+      showToast(`記錄失敗：${e.message}`);
+      updateCooldownUI();
+    }
+  }
+
+  function switchView(view) {
+    const isRecord = view === 'record';
+    document.getElementById('viewRecord').style.display = isRecord ? '' : 'none';
+    document.getElementById('viewChart').style.display = isRecord ? 'none' : '';
+    document.getElementById('viewTabRecord').classList.toggle('active', isRecord);
+    document.getElementById('viewTabChart').classList.toggle('active', !isRecord);
+    if (!isRecord) renderChart(activeChart);
+  }
+
+  function switchChartTab(type) {
+    activeChart = type;
+    document.getElementById('chartSelect').value = type;
+    renderChart(type);
+  }
+
+  async function renderChart(type) {
+    if (type === 'hourly') await renderHourlyChart();
+    else await renderDailyChart();
+  }
+
+  async function renderHourlyChart() {
+    try {
+      const data = await api('GET', `/smoke/stats/hourly?date=${getTodayString()}`);
+      drawBarChart(Array.from({length:24}, (_,h) => `${h}時`), data.counts, '#ff453a');
+    } catch {}
+  }
+
+  async function renderDailyChart() {
+    try {
+      const month = getCurrentMonth();
+      const data = await api('GET', `/smoke/stats/daily?month=${month}`);
+      const days = new Date(new Date().getFullYear(), new Date().getMonth()+1, 0).getDate();
+      const labels = Array.from({length:days}, (_,i) => `${i+1}日`);
+      const counts = labels.map((_,i) => data.counts[`${month}-${String(i+1).padStart(2,'0')}`] ?? 0);
+      drawBarChart(labels, counts, '#0071e3');
+    } catch {}
+  }
+
+  function drawBarChart(labels, data, color) {
+    const ctx = document.getElementById('chartCanvas').getContext('2d');
+    if (chartInstance) chartInstance.destroy();
+    chartInstance = new Chart(ctx, {
+      type: 'bar',
+      data: { labels, datasets: [{ data, backgroundColor: color+'99', borderColor: color, borderWidth:1, borderRadius:4 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { font: { size: 10 }, maxRotation: 0 }, grid: { display: false } },
+          y: { ticks: { stepSize: 1 }, beginAtZero: true },
+        },
+      },
+    });
+  }
+
+  let settingsTimer;
+  async function saveSettings() {
+    const hours = Number.parseFloat(document.getElementById('cooldownInput').value);
+    if (Number.isNaN(hours) || hours < 0) { showToast('間距不可小於 0'); return; }
+    try {
+      await api('PUT', '/settings', { cooldown_hours: hours });
+      cooldownHours = hours;
+      updateCooldownUI();
+    } catch (e) {
+      showToast(`設定儲存失敗：${e.message}`);
+    }
+  }
+
+  async function exportData() {
+    const btn = document.getElementById('btnExport');
+    btn.disabled = true; btn.textContent = '準備中…';
+    try {
+      const data = await api('POST', '/export', {});
+      const pad = s => String(s).padStart(2, '0');
+      const rows = Array.from({ length: 12 }, (_, i) => {
+        const month = `${data.year}-${pad(i + 1)}`;
+        const count = data.monthly[month] ?? 0;
+        return `${month}    ${String(count).padStart(3)} 根`;
+      });
+      const text = [
+        `抽菸統計 ${data.year} 年`,
+        '',
+        '月份         根數',
+        '─────────────────',
+        ...rows,
+        '─────────────────',
+        `共計         ${String(data.total).padStart(3)} 根`,
+      ].join('\n');
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `smoking-${data.year}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      showToast(`匯出失敗：${e.message}`);
+    } finally {
+      btn.disabled = false; btn.textContent = '下載統計資料';
+    }
+  }
+
+  async function clearData() {
+    if (!confirm('確定要清除所有歷史資料嗎？此操作無法復原。')) return;
+    try {
+      await api('DELETE', '/smoke/all');
+      todayRecords = [];
+      updateCounterUI(); updateHistoryUI(); updateCooldownUI();
+      showToast('所有紀錄已清除 ✓');
+    } catch (e) {
+      showToast(`清除失敗：${e.message}`);
+    }
+  }
+
+  // ── Event listeners ────────────────────────────────────────────────────────
+  document.getElementById('btnGear').addEventListener('click', () => showPage('settings'));
+  document.getElementById('btnBack').addEventListener('click', () => showPage('main'));
+  document.getElementById('btnSmoke').addEventListener('click', addSmoke);
+  document.getElementById('btnClear').addEventListener('click', clearData);
+  document.getElementById('viewTabRecord').addEventListener('click', () => switchView('record'));
+  document.getElementById('viewTabChart').addEventListener('click', () => switchView('chart'));
+  document.getElementById('chartSelect').addEventListener('change', e => switchChartTab(e.target.value));
+  document.getElementById('btnExport').addEventListener('click', exportData);
+  document.getElementById('cooldownInput').addEventListener('change', () => {
+    clearTimeout(settingsTimer);
+    settingsTimer = setTimeout(saveSettings, 800);
+  });
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  document.getElementById('currentDate').textContent =
+    new Date().toLocaleDateString('zh-TW', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+  await Promise.all([loadSettings(), loadToday()]);
+
+  setInterval(updateCooldownUI, 1000);
 </script>
 
 </body>

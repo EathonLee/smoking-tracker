@@ -1,0 +1,6 @@
+# Cloudflare Worker
+worker/node_modules/
+worker/.wrangler/
+
+# Local dev secrets (never commit)
+worker/.dev.vars
