@@ -6,3 +6,4 @@ worker/.wrangler/
 worker/.dev.vars
 
 CLAUDE.md
+.claude/
