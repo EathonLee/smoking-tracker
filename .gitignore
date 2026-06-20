@@ -4,3 +4,5 @@ worker/.wrangler/
 
 # Local dev secrets (never commit)
 worker/.dev.vars
+
+CLAUDE.md
