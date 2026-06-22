@@ -111,6 +111,33 @@ GitHub Pages 會自動部署，約 1 分鐘後生效。
 
 ---
 
+## Production curl
+
+```bash
+# Health check（無需 header）
+curl https://smoking-tracker.eathon601.workers.dev/health
+
+# 今日紀錄
+curl "https://smoking-tracker.eathon601.workers.dev/smoke/today?date=$(date +%Y-%m-%d)&tz_offset=480" \
+  -H "x-device-id: <your-device-uuid>"
+
+# 本月統計
+curl "https://smoking-tracker.eathon601.workers.dev/smoke/stats/daily?month=$(date +%Y-%m)&tz_offset=480" \
+  -H "x-device-id: <your-device-uuid>"
+
+# Settings
+curl https://smoking-tracker.eathon601.workers.dev/settings \
+  -H "x-device-id: <your-device-uuid>"
+
+# 新增一筆紀錄
+curl -X POST https://smoking-tracker.eathon601.workers.dev/smoke \
+  -H "x-device-id: <your-device-uuid>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+---
+
 ## 本地開發
 
 ```bash
