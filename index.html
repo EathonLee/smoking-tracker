@@ -236,6 +236,7 @@
           <select class="chart-select" id="chartSelect">
             <option value="hourly">今日</option>
             <option value="daily">本月</option>
+            <option value="yearly">本年</option>
           </select>
           <div class="chart-wrap">
             <canvas id="chartCanvas"></canvas>
@@ -445,7 +446,20 @@
 
   async function renderChart(type) {
     if (type === 'hourly') await renderHourlyChart();
-    else await renderDailyChart();
+    else if (type === 'daily') await renderDailyChart();
+    else await renderYearlyChart();
+  }
+
+  async function renderYearlyChart() {
+    try {
+      const data = await api('POST', '/export', { tz_offset: TZ_OFFSET });
+      const labels = Array.from({length: 12}, (_, i) => `${i + 1}月`);
+      const counts = Array.from({length: 12}, (_, i) => {
+        const month = `${data.year}-${String(i + 1).padStart(2, '0')}`;
+        return data.monthly[month] ?? 0;
+      });
+      drawBarChart(labels, counts, '#30d158');
+    } catch {}
   }
 
   function renderHourlyChart() {
@@ -561,7 +575,17 @@
 
   await Promise.all([loadSettings(), loadToday()]);
 
-  setInterval(updateCooldownUI, 1000);
+  let currentTodayString = getTodayString();
+  setInterval(() => {
+    const todayStr = getTodayString();
+    if (todayStr !== currentTodayString) {
+      currentTodayString = todayStr;
+      const el = document.getElementById('currentDate');
+      if (el) el.textContent = new Date().toLocaleDateString('zh-TW', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      loadToday();
+    }
+    updateCooldownUI();
+  }, 1000);
 </script>
 
 </body>
