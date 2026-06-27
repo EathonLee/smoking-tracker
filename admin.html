@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>抽菸紀錄器 · 管理後台</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" integrity="sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt" crossorigin="anonymous"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f7;
+      color: #1d1d1f;
+      min-height: 100vh;
+    }
+
+    /* ── Auth overlay ── */
+    #authOverlay {
+      position: fixed; inset: 0;
+      background: #1d1d1f;
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000;
+    }
+    .auth-card {
+      background: #2c2c2e;
+      border-radius: 20px;
+      padding: 40px 36px;
+      width: 100%; max-width: 360px;
+      text-align: center;
+    }
+    .auth-logo { font-size: 40px; margin-bottom: 12px; }
+    .auth-title { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+    .auth-sub { font-size: 14px; color: #8e8e93; margin-bottom: 28px; }
+    .auth-input {
+      width: 100%; padding: 13px 16px;
+      background: #3a3a3c; border: 1.5px solid #3a3a3c; border-radius: 12px;
+      color: #fff; font-size: 16px; outline: none;
+      transition: border-color 0.2s;
+      margin-bottom: 12px;
+    }
+    .auth-input:focus { border-color: #0071e3; }
+    .auth-btn {
+      width: 100%; padding: 13px; border: none; border-radius: 12px;
+      background: #0071e3; color: #fff; font-size: 16px; font-weight: 600;
+      cursor: pointer; transition: opacity 0.15s;
+    }
+    .auth-btn:hover { opacity: 0.88; }
+    .auth-error { font-size: 13px; color: #ff453a; margin-top: 10px; min-height: 18px; }
+
+    /* ── Dashboard layout ── */
+    #dashboard { display: flex; min-height: 100vh; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 220px; flex-shrink: 0;
+      background: #1d1d1f;
+      display: flex; flex-direction: column;
+      position: sticky; top: 0; height: 100vh;
+      overflow-y: auto;
+    }
+    .sidebar-logo {
+      padding: 28px 20px 20px;
+      font-size: 18px; font-weight: 700; color: #fff;
+      border-bottom: 1px solid #3a3a3c;
+    }
+    .sidebar-logo span { opacity: 0.5; font-weight: 400; font-size: 12px; display: block; margin-top: 2px; }
+    .sidebar-nav { padding: 12px 10px; flex: 1; }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%; padding: 10px 12px;
+      border: none; border-radius: 10px;
+      background: none; color: #8e8e93;
+      font-size: 14px; font-weight: 500; font-family: inherit;
+      cursor: pointer; transition: all 0.15s; text-align: left;
+      margin-bottom: 2px;
+    }
+    .nav-item:hover { background: #2c2c2e; color: #fff; }
+    .nav-item.active { background: #0071e3; color: #fff; }
+    .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+    .sidebar-footer {
+      padding: 16px 10px;
+      border-top: 1px solid #3a3a3c;
+    }
+    .btn-logout {
+      width: 100%; padding: 8px 12px;
+      border: 1px solid #3a3a3c; border-radius: 8px;
+      background: none; color: #8e8e93; font-size: 13px; font-family: inherit;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .btn-logout:hover { border-color: #ff453a; color: #ff453a; }
+
+    /* ── Main ── */
+    .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+    /* ── Mobile tabs ── */
+    .mobile-tabs {
+      display: none;
+      background: #fff;
+      border-bottom: 1px solid #e5e5ea;
+      position: sticky; top: 0; z-index: 10;
+    }
+    .mobile-tab {
+      flex: 1; padding: 13px 8px;
+      border: none; background: none;
+      font-size: 13px; font-weight: 500; font-family: inherit;
+      color: #86868b; cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .mobile-tab.active { color: #0071e3; border-bottom-color: #0071e3; }
+
+    /* ── Content ── */
+    .content { padding: 28px 28px 48px; max-width: 960px; }
+
+    /* ── Page header ── */
+    .page-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 22px;
+    }
+    .page-title { font-size: 24px; font-weight: 700; }
+    .btn-refresh {
+      padding: 7px 14px; border: 1.5px solid #e5e5ea; border-radius: 8px;
+      background: #fff; color: #1d1d1f; font-size: 13px; font-weight: 500;
+      font-family: inherit; cursor: pointer; transition: all 0.15s;
+    }
+    .btn-refresh:hover { border-color: #0071e3; color: #0071e3; }
+
+    /* ── Stat cards ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px; margin-bottom: 20px;
+    }
+    .stat-card {
+      background: #fff; border-radius: 16px;
+      padding: 20px 20px 18px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      border-left: 4px solid transparent;
+    }
+    .stat-card.blue { border-left-color: #0071e3; }
+    .stat-card.red  { border-left-color: #ff453a; }
+    .stat-card.green { border-left-color: #30d158; }
+    .stat-card.orange { border-left-color: #ff9f0a; }
+    .stat-label {
+      font-size: 11px; font-weight: 600; color: #86868b;
+      text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;
+    }
+    .stat-value { font-size: 36px; font-weight: 700; line-height: 1; }
+    .stat-sub { font-size: 12px; color: #86868b; margin-top: 4px; }
+
+    /* ── Charts grid ── */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px; margin-bottom: 20px;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: #fff; border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      margin-bottom: 14px;
+    }
+    .card:last-child { margin-bottom: 0; }
+    .card-header {
+      display: flex; align-items: baseline; justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .card-title { font-size: 15px; font-weight: 600; }
+    .card-sub { font-size: 12px; color: #86868b; }
+    .chart-wrap { position: relative; height: 210px; }
+
+    /* ── Table ── */
+    .table-scroll { overflow-x: auto; }
+    .data-table {
+      width: 100%; border-collapse: collapse;
+      font-size: 14px; min-width: 480px;
+    }
+    .data-table th {
+      text-align: left; padding: 8px 12px;
+      font-size: 11px; font-weight: 600; color: #86868b;
+      text-transform: uppercase; letter-spacing: 0.04em;
+      border-bottom: 1.5px solid #f0f0f3;
+      white-space: nowrap;
+    }
+    .data-table td {
+      padding: 12px 12px; border-bottom: 1px solid #f0f0f3;
+      color: #3a3a3c; vertical-align: middle;
+    }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tbody tr { cursor: pointer; transition: background 0.1s; }
+    .data-table tbody tr:hover { background: #f9f9fb; }
+    .td-num { color: #86868b; font-size: 12px; width: 36px; }
+    .td-device { font-family: monospace; font-size: 13px; }
+    .td-count { font-weight: 600; }
+    .td-time { font-family: monospace; }
+    .btn-detail {
+      padding: 5px 12px; border: 1.5px solid #e5e5ea; border-radius: 7px;
+      background: #fff; color: #0071e3; font-size: 12px; font-weight: 600;
+      font-family: inherit; cursor: pointer; white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .btn-detail:hover { border-color: #0071e3; background: #f0f7ff; }
+
+    /* ── Detail page ── */
+    .btn-back {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px; border: 1.5px solid #e5e5ea; border-radius: 10px;
+      background: #fff; color: #1d1d1f; font-size: 14px; font-weight: 500;
+      font-family: inherit; cursor: pointer; margin-bottom: 20px;
+      transition: all 0.15s;
+    }
+    .btn-back:hover { border-color: #86868b; }
+    .device-id-box {
+      font-family: monospace; font-size: 14px; color: #3a3a3c;
+      word-break: break-all;
+    }
+
+    /* ── Empty / loading states ── */
+    .empty-state {
+      text-align: center; color: #86868b; padding: 32px 16px; font-size: 14px;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 720px) {
+      .sidebar { display: none; }
+      .mobile-tabs { display: flex; }
+      .content { padding: 16px 16px 48px; }
+      .stats-grid { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+      .stat-card { padding: 14px 12px; }
+      .stat-value { font-size: 26px; }
+      .charts-grid { grid-template-columns: 1fr; }
+      .page-title { font-size: 20px; }
+    }
+
+    @media (max-width: 400px) {
+      .stats-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Auth overlay ── -->
+<div id="authOverlay">
+  <div class="auth-card">
+    <div class="auth-logo">🚬</div>
+    <div class="auth-title">管理後台</div>
+    <div class="auth-sub">請輸入 Admin Key 以繼續</div>
+    <input class="auth-input" type="password" id="adminKeyInput" placeholder="Admin Key" autocomplete="current-password">
+    <button class="auth-btn" id="btnLogin">登入</button>
+    <div class="auth-error" id="authError"></div>
+  </div>
+</div>
+
+<!-- ── Dashboard ── -->
+<div id="dashboard" style="display:none">
+
+  <!-- Sidebar (desktop) -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      🚬 抽菸紀錄器
+      <span>管理後台</span>
+    </div>
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-page="overview">
+        <span class="nav-icon">📊</span> 概覽
+      </button>
+      <button class="nav-item" data-page="users">
+        <span class="nav-icon">👥</span> 使用者
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="btn-logout" id="btnLogout">登出</button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+
+    <!-- Mobile tab bar -->
+    <div class="mobile-tabs">
+      <button class="mobile-tab active" data-page="overview">📊 概覽</button>
+      <button class="mobile-tab" data-page="users">👥 使用者</button>
+    </div>
+
+    <div class="content">
+
+      <!-- ── Page: Overview ── -->
+      <div id="pageOverview">
+        <div class="page-header">
+          <div class="page-title">概覽</div>
+          <button class="btn-refresh" id="btnRefreshOverview">重新整理</button>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card blue">
+            <div class="stat-label">使用者數</div>
+            <div class="stat-value" id="statUsers">–</div>
+          </div>
+          <div class="stat-card red">
+            <div class="stat-label">總抽菸次數</div>
+            <div class="stat-value" id="statTotal">–</div>
+          </div>
+          <div class="stat-card green">
+            <div class="stat-label">今日全體</div>
+            <div class="stat-value" id="statToday">–</div>
+          </div>
+        </div>
+
+        <div class="charts-grid">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">時段分佈</div>
+              <div class="card-sub">全時間・每小時</div>
+            </div>
+            <div class="chart-wrap"><canvas id="chartHourly"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">最近 30 天趨勢</div>
+            </div>
+            <div class="chart-wrap"><canvas id="chartTrend"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Page: Users ── -->
+      <div id="pageUsers" style="display:none">
+        <div class="page-header">
+          <div class="page-title">使用者</div>
+          <button class="btn-refresh" id="btnRefreshUsers">重新整理</button>
+        </div>
+        <div class="card">
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>裝置 ID</th>
+                  <th>總計</th>
+                  <th>最後抽菸</th>
+                  <th>首次記錄</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="usersTableBody">
+                <tr><td colspan="6"><div class="empty-state">載入中…</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Page: User Detail ── -->
+      <div id="pageDetail" style="display:none">
+        <button class="btn-back" id="btnBack">← 返回使用者列表</button>
+
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-header" style="margin-bottom:6px">
+            <div class="card-title">裝置 ID</div>
+          </div>
+          <div class="device-id-box" id="detailDeviceId"></div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card red">
+            <div class="stat-label">總計</div>
+            <div class="stat-value" id="detailTotal">–</div>
+          </div>
+          <div class="stat-card blue">
+            <div class="stat-label">本月</div>
+            <div class="stat-value" id="detailMonth">–</div>
+          </div>
+          <div class="stat-card green">
+            <div class="stat-label">本週</div>
+            <div class="stat-value" id="detailWeek">–</div>
+          </div>
+        </div>
+
+        <div class="charts-grid">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">時段分佈</div>
+              <div class="card-sub">全時間・每小時</div>
+            </div>
+            <div class="chart-wrap"><canvas id="chartUserHourly"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">每月趨勢</div>
+            </div>
+            <div class="chart-wrap"><canvas id="chartUserMonthly"></canvas></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">完整紀錄</div>
+            <div class="card-sub" id="detailLogsCount"></div>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr><th>#</th><th>日期</th><th>時間</th></tr>
+              </thead>
+              <tbody id="detailLogsBody">
+                <tr><td colspan="3"><div class="empty-state">載入中…</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /.content -->
+  </div><!-- /.main -->
+</div><!-- /#dashboard -->
+
+<script type="module">
+  const WORKER_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.protocol === 'file:')
+    ? 'http://localhost:8787'
+    : 'https://smoking-tracker.eathon601.workers.dev';
+
+  const TZ_OFFSET = -new Date().getTimezoneOffset(); // minutes east of UTC
+
+  let adminKey = localStorage.getItem('admin_key') || '';
+  const charts = {};
+
+  // ── Formatting ─────────────────────────────────────────────────────────────
+
+  function fmtDeviceId(id) {
+    if (!id || id.length <= 12) return id ?? '-';
+    return `${id.slice(0, 8)}…${id.slice(-4)}`;
+  }
+
+  function fmtDateTime(iso) {
+    if (!iso) return '-';
+    const d = new Date(iso);
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mn = String(d.getMinutes()).padStart(2, '0');
+    return `${d.getFullYear()}/${mm}/${dd} ${hh}:${mn}`;
+  }
+
+  function localDateStr(daysAgo = 0) {
+    return new Date(Date.now() + TZ_OFFSET * 60_000 - daysAgo * 86_400_000).toISOString().slice(0, 10);
+  }
+
+  function localMonthStr() {
+    return new Date(Date.now() + TZ_OFFSET * 60_000).toISOString().slice(0, 7);
+  }
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // ── API ────────────────────────────────────────────────────────────────────
+
+  async function api(path, skipAuthRedirect = false) {
+    const res = await fetch(`${WORKER_URL}${path}`, {
+      headers: { 'x-admin-key': adminKey },
+    });
+    if (res.status === 401) {
+      if (!skipAuthRedirect) showAuth('連線已失效，請重新登入');
+      throw Object.assign(new Error('UNAUTHORIZED'), { status: 401 });
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+  // ── Auth ───────────────────────────────────────────────────────────────────
+
+  function showAuth(msg = '') {
+    document.getElementById('authOverlay').style.display = 'flex';
+    document.getElementById('dashboard').style.display = 'none';
+    document.getElementById('authError').textContent = msg;
+  }
+
+  function hideAuth() {
+    document.getElementById('authOverlay').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'flex';
+  }
+
+  // ── Navigation ─────────────────────────────────────────────────────────────
+
+  function navigate(page, userId = null) {
+    document.getElementById('pageOverview').style.display = page === 'overview' ? '' : 'none';
+    document.getElementById('pageUsers').style.display    = page === 'users'    ? '' : 'none';
+    document.getElementById('pageDetail').style.display   = page === 'detail'   ? '' : 'none';
+
+    const navPages = ['overview', 'users'];
+    document.querySelectorAll('[data-page]').forEach(el => {
+      el.classList.toggle('active', el.dataset.page === page || (page === 'detail' && el.dataset.page === 'users'));
+    });
+
+    if (page === 'overview') loadOverview();
+    else if (page === 'users') loadUsers();
+    else if (page === 'detail' && userId) loadDetail(userId);
+  }
+
+  // ── Charts ─────────────────────────────────────────────────────────────────
+
+  function mkBar(id, labels, data, color) {
+    if (charts[id]) charts[id].destroy();
+    const ctx = document.getElementById(id).getContext('2d');
+    charts[id] = new Chart(ctx, {
+      type: 'bar',
+      data: { labels, datasets: [{ data, backgroundColor: color + 'bb', borderColor: color, borderWidth: 1, borderRadius: 3 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { display: false } },
+          y: { ticks: { stepSize: 1 }, beginAtZero: true, grid: { color: '#f0f0f3' } },
+        },
+      },
+    });
+  }
+
+  // ── Overview ───────────────────────────────────────────────────────────────
+
+  async function loadOverview() {
+    ['statUsers', 'statTotal', 'statToday'].forEach(id => {
+      document.getElementById(id).textContent = '…';
+    });
+    try {
+      const d = await api(`/admin/stats?tz_offset=${TZ_OFFSET}&days=30`);
+      document.getElementById('statUsers').textContent = d.user_count;
+      document.getElementById('statTotal').textContent = d.total_smokes;
+      document.getElementById('statToday').textContent = d.daily_trend[localDateStr()] ?? 0;
+
+      // Hourly chart (all-time)
+      mkBar('chartHourly',
+        Array.from({ length: 24 }, (_, h) => `${h}時`),
+        d.hourly_distribution,
+        '#ff9f0a'
+      );
+
+      // 30-day trend
+      const labels = [], counts = [];
+      for (let i = 29; i >= 0; i--) {
+        const day = localDateStr(i);
+        labels.push(day.slice(5).replace('-', '/'));
+        counts.push(d.daily_trend[day] ?? 0);
+      }
+      mkBar('chartTrend', labels, counts, '#0071e3');
+    } catch (e) {
+      if (e.status !== 401) console.error(e);
+    }
+  }
+
+  // ── Users ──────────────────────────────────────────────────────────────────
+
+  async function loadUsers() {
+    document.getElementById('usersTableBody').innerHTML =
+      '<tr><td colspan="6"><div class="empty-state">載入中…</div></td></tr>';
+    try {
+      const d = await api('/admin/users');
+      renderUsers(d.users);
+    } catch (e) {
+      if (e.status !== 401) {
+        document.getElementById('usersTableBody').innerHTML =
+          '<tr><td colspan="6"><div class="empty-state">載入失敗</div></td></tr>';
+      }
+    }
+  }
+
+  function renderUsers(users) {
+    const tbody = document.getElementById('usersTableBody');
+    if (!users.length) {
+      tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state">暫無資料</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = users.map((u, i) => `
+      <tr data-id="${escHtml(u.device_id)}">
+        <td class="td-num">${i + 1}</td>
+        <td class="td-device" title="${escHtml(u.device_id)}">${fmtDeviceId(u.device_id)}</td>
+        <td class="td-count">${u.total}</td>
+        <td>${fmtDateTime(u.last_smoked_at)}</td>
+        <td>${fmtDateTime(u.first_smoked_at)}</td>
+        <td><button class="btn-detail" data-id="${escHtml(u.device_id)}">詳細 →</button></td>
+      </tr>
+    `).join('');
+
+    tbody.querySelectorAll('tr[data-id]').forEach(row => {
+      row.addEventListener('click', () => navigate('detail', row.dataset.id));
+    });
+    tbody.querySelectorAll('.btn-detail').forEach(btn => {
+      btn.addEventListener('click', e => { e.stopPropagation(); navigate('detail', btn.dataset.id); });
+    });
+  }
+
+  // ── User Detail ────────────────────────────────────────────────────────────
+
+  async function loadDetail(userId) {
+    document.getElementById('detailDeviceId').textContent = userId;
+    ['detailTotal', 'detailMonth', 'detailWeek'].forEach(id => {
+      document.getElementById(id).textContent = '…';
+    });
+    document.getElementById('detailLogsBody').innerHTML =
+      '<tr><td colspan="3"><div class="empty-state">載入中…</div></td></tr>';
+
+    try {
+      const d = await api(`/admin/users/${encodeURIComponent(userId)}?tz_offset=${TZ_OFFSET}`);
+      renderDetail(d);
+    } catch (e) {
+      if (e.status !== 401) {
+        document.getElementById('detailLogsBody').innerHTML =
+          '<tr><td colspan="3"><div class="empty-state">載入失敗</div></td></tr>';
+      }
+    }
+  }
+
+  function renderDetail(d) {
+    const offsetMs = TZ_OFFSET * 60_000;
+
+    // Stat cards
+    document.getElementById('detailTotal').textContent = d.total;
+    document.getElementById('detailMonth').textContent = d.monthly[localMonthStr()] ?? 0;
+
+    // This week (Mon–Sun)
+    const localNow = new Date(Date.now() + offsetMs);
+    const dow = localNow.getUTCDay(); // 0=Sun
+    const mondayMs = localNow.getTime() - (dow === 0 ? 6 : dow - 1) * 86_400_000;
+    const mondayStr = new Date(mondayMs).toISOString().slice(0, 10);
+    const sundayStr = new Date(mondayMs + 6 * 86_400_000).toISOString().slice(0, 10);
+    const weekCount = d.logs.filter(iso => {
+      const day = new Date(Date.parse(iso) + offsetMs).toISOString().slice(0, 10);
+      return day >= mondayStr && day <= sundayStr;
+    }).length;
+    document.getElementById('detailWeek').textContent = weekCount;
+
+    // Hourly chart
+    mkBar('chartUserHourly',
+      Array.from({ length: 24 }, (_, h) => `${h}時`),
+      d.hourly_distribution,
+      '#ff453a'
+    );
+
+    // Monthly chart
+    const monthKeys = Object.keys(d.monthly).sort();
+    mkBar('chartUserMonthly',
+      monthKeys.map(k => {
+        const [y, m] = k.split('-');
+        return `${y.slice(2)}/${m}`;
+      }),
+      monthKeys.map(k => d.monthly[k]),
+      '#30d158'
+    );
+
+    // Logs table
+    document.getElementById('detailLogsCount').textContent = `共 ${d.total} 筆`;
+    document.getElementById('detailLogsBody').innerHTML = d.logs.map((iso, i) => {
+      const dt = new Date(iso);
+      const date = `${dt.getFullYear()}/${String(dt.getMonth()+1).padStart(2,'0')}/${String(dt.getDate()).padStart(2,'0')}`;
+      const time = `${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}:${String(dt.getSeconds()).padStart(2,'0')}`;
+      return `<tr><td class="td-num">${i + 1}</td><td>${date}</td><td class="td-time">${time}</td></tr>`;
+    }).join('');
+  }
+
+  // ── Event listeners ────────────────────────────────────────────────────────
+
+  document.querySelectorAll('[data-page]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.page) navigate(btn.dataset.page);
+    });
+  });
+
+  document.getElementById('btnBack').addEventListener('click', () => navigate('users'));
+  document.getElementById('btnRefreshOverview').addEventListener('click', loadOverview);
+  document.getElementById('btnRefreshUsers').addEventListener('click', loadUsers);
+
+  document.getElementById('btnLogout').addEventListener('click', () => {
+    localStorage.removeItem('admin_key');
+    adminKey = '';
+    showAuth();
+  });
+
+  document.getElementById('btnLogin').addEventListener('click', async () => {
+    const key = document.getElementById('adminKeyInput').value.trim();
+    if (!key) return;
+    adminKey = key;
+    document.getElementById('authError').textContent = '';
+    try {
+      await api(`/admin/stats?tz_offset=0&days=1`, true);
+      localStorage.setItem('admin_key', adminKey);
+      hideAuth();
+      navigate('overview');
+    } catch (e) {
+      if (e.status === 401 || e.message === 'UNAUTHORIZED') {
+        document.getElementById('authError').textContent = 'Admin Key 錯誤，請重試';
+      } else {
+        document.getElementById('authError').textContent = `連線錯誤：${e.message}`;
+      }
+    }
+  });
+
+  document.getElementById('adminKeyInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('btnLogin').click();
+  });
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+
+  if (!adminKey) {
+    showAuth();
+  } else {
+    hideAuth();
+    navigate('overview');
+  }
+</script>
+</body>
+</html>

@@ -1,11 +1,12 @@
 export interface Env {
   DB: D1Database;
+  ADMIN_KEY?: string;
 }
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, x-device-id',
+  'Access-Control-Allow-Headers': 'Content-Type, x-device-id, x-admin-key',
 };
 
 function json(data: unknown, status = 200): Response {
@@ -30,7 +31,7 @@ function localDateToUtcRange(dateStr: string, tzOffset: number): [string, string
   ];
 }
 
-// ── Handlers ──────────────────────────────────────────────────────────────────
+// ── User Handlers ─────────────────────────────────────────────────────────────
 
 async function handleAddSmoke(req: Request, env: Env, deviceId: string): Promise<Response> {
   const body = await req.json<{ smoked_at?: string }>();
@@ -64,7 +65,6 @@ async function handleDailyStats(req: Request, env: Env, deviceId: string): Promi
   if (!month) return json({ error: 'Missing month' }, 400);
 
   const offsetMs = tzOffset * 60_000;
-  // Local month boundaries → UTC range
   const [y, m] = month.split('-').map(Number);
   const nextMonth = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
   const since = new Date(Date.parse(`${month}-01T00:00:00.000Z`) - offsetMs).toISOString();
@@ -74,7 +74,6 @@ async function handleDailyStats(req: Request, env: Env, deviceId: string): Promi
     'SELECT smoked_at FROM smoke_logs WHERE device_id = ? AND smoked_at >= ? AND smoked_at < ? ORDER BY smoked_at ASC'
   ).bind(deviceId, since, until).all<{ smoked_at: string }>();
 
-  // Bucket by local date
   const counts: Record<string, number> = {};
   for (const { smoked_at } of results) {
     const localDay = new Date(Date.parse(smoked_at) + offsetMs).toISOString().slice(0, 10);
@@ -116,7 +115,6 @@ async function handleExport(req: Request, env: Env, deviceId: string): Promise<R
   const tzOffset = body.tz_offset ?? 0;
   const offsetMs = tzOffset * 60_000;
 
-  // Local year boundaries → UTC range
   const localNow = new Date(Date.now() + offsetMs);
   const year = localNow.getUTCFullYear();
   const since = new Date(Date.parse(`${year}-01-01T00:00:00.000Z`) - offsetMs).toISOString();
@@ -126,7 +124,6 @@ async function handleExport(req: Request, env: Env, deviceId: string): Promise<R
     'SELECT smoked_at FROM smoke_logs WHERE device_id = ? AND smoked_at >= ? AND smoked_at < ? ORDER BY smoked_at ASC'
   ).bind(deviceId, since, until).all<{ smoked_at: string }>();
 
-  // Bucket by local month
   const monthly: Record<string, number> = {};
   for (const { smoked_at } of results) {
     const localMonth = new Date(Date.parse(smoked_at) + offsetMs).toISOString().slice(0, 7);
@@ -152,6 +149,97 @@ async function handleDeleteAll(env: Env, deviceId: string): Promise<Response> {
   return json({ ok: true });
 }
 
+// ── Admin Handlers ────────────────────────────────────────────────────────────
+
+function adminAuth(req: Request, env: Env): Response | null {
+  if (!env.ADMIN_KEY) return json({ error: 'Admin not configured' }, 503);
+  const key = req.headers.get('x-admin-key');
+  if (key !== env.ADMIN_KEY) return json({ error: 'Unauthorized' }, 401);
+  return null;
+}
+
+async function handleAdminStats(req: Request, env: Env): Promise<Response> {
+  const authErr = adminAuth(req, env);
+  if (authErr) return authErr;
+
+  const url = new URL(req.url);
+  const tzOffset = Number.parseInt(url.searchParams.get('tz_offset') ?? '0', 10);
+  const days = Number.parseInt(url.searchParams.get('days') ?? '30', 10);
+  const offsetMs = tzOffset * 60_000;
+  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+
+  const [overall, allLogs, recentLogs] = await Promise.all([
+    env.DB.prepare('SELECT COUNT(*) as total, COUNT(DISTINCT device_id) as user_count FROM smoke_logs')
+      .first<{ total: number; user_count: number }>(),
+    env.DB.prepare('SELECT smoked_at FROM smoke_logs')
+      .all<{ smoked_at: string }>(),
+    env.DB.prepare('SELECT smoked_at FROM smoke_logs WHERE smoked_at >= ?')
+      .bind(since).all<{ smoked_at: string }>(),
+  ]);
+
+  const hourly = new Array(24).fill(0);
+  for (const { smoked_at } of allLogs.results) {
+    hourly[new Date(Date.parse(smoked_at) + offsetMs).getUTCHours()]++;
+  }
+
+  const daily: Record<string, number> = {};
+  for (const { smoked_at } of recentLogs.results) {
+    const day = new Date(Date.parse(smoked_at) + offsetMs).toISOString().slice(0, 10);
+    daily[day] = (daily[day] ?? 0) + 1;
+  }
+
+  return json({
+    total_smokes: overall?.total ?? 0,
+    user_count: overall?.user_count ?? 0,
+    hourly_distribution: hourly,
+    daily_trend: daily,
+  });
+}
+
+async function handleAdminUsers(req: Request, env: Env): Promise<Response> {
+  const authErr = adminAuth(req, env);
+  if (authErr) return authErr;
+
+  const { results } = await env.DB.prepare(
+    `SELECT device_id, COUNT(*) as total,
+            MIN(smoked_at) as first_smoked_at,
+            MAX(smoked_at) as last_smoked_at
+     FROM smoke_logs GROUP BY device_id ORDER BY total DESC`
+  ).all<{ device_id: string; total: number; first_smoked_at: string; last_smoked_at: string }>();
+
+  return json({ users: results });
+}
+
+async function handleAdminUserDetail(req: Request, env: Env, deviceId: string): Promise<Response> {
+  const authErr = adminAuth(req, env);
+  if (authErr) return authErr;
+
+  const url = new URL(req.url);
+  const tzOffset = Number.parseInt(url.searchParams.get('tz_offset') ?? '0', 10);
+  const offsetMs = tzOffset * 60_000;
+
+  const { results } = await env.DB.prepare(
+    'SELECT smoked_at FROM smoke_logs WHERE device_id = ? ORDER BY smoked_at DESC'
+  ).bind(deviceId).all<{ smoked_at: string }>();
+
+  const hourly = new Array(24).fill(0);
+  const monthly: Record<string, number> = {};
+  for (const { smoked_at } of results) {
+    const d = new Date(Date.parse(smoked_at) + offsetMs);
+    hourly[d.getUTCHours()]++;
+    const mk = d.toISOString().slice(0, 7);
+    monthly[mk] = (monthly[mk] ?? 0) + 1;
+  }
+
+  return json({
+    device_id: deviceId,
+    total: results.length,
+    hourly_distribution: hourly,
+    monthly,
+    logs: results.map(r => r.smoked_at),
+  });
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 
 type Handler = (req: Request, env: Env, deviceId: string) => Promise<Response>;
@@ -166,6 +254,14 @@ const routes: Record<string, Handler> = {
   'POST /export':            (req, env, id) => handleExport(req, env, id),
 };
 
+async function routeAdmin(request: Request, env: Env, path: string, method: string): Promise<Response> {
+  if (method === 'GET' && path === '/admin/stats') return handleAdminStats(request, env);
+  if (method === 'GET' && path === '/admin/users') return handleAdminUsers(request, env);
+  const userMatch = /^\/admin\/users\/([^/]+)$/.exec(path);
+  if (method === 'GET' && userMatch) return handleAdminUserDetail(request, env, userMatch[1]);
+  return json({ error: 'Not found' }, 404);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === 'OPTIONS') {
@@ -177,6 +273,7 @@ export default {
     const method = request.method;
 
     if (path === '/health') return json({ ok: true });
+    if (path.startsWith('/admin')) return routeAdmin(request, env, path, method);
 
     const deviceId = deviceIdFrom(request);
     if (!deviceId) return json({ error: 'Missing x-device-id header' }, 400);
