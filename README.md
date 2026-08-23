@@ -2,7 +2,7 @@
 
 iPhone 主畫面捷徑用的個人抽菸紀錄 App。前端為單一 HTML 靜態頁面，後端為 Cloudflare Worker + D1 資料庫。
 
-**Live：** https://eathonlee.github.io/smoking-tracker/
+**Live：** https://eathonlee.github.io/smoking-traker/
 
 ---
 
