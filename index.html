@@ -157,6 +157,8 @@
       color: #1d1d1f; outline: none;
     }
     .setting-input:focus { border-color: #0071e3; }
+    .setting-input.wide { width: 150px; text-align: left; }
+    .setting-input::placeholder { color: #c7c7cc; }
 
     .export-section { padding: 14px 0; }
     .export-section-label { font-size: 15px; color: #1d1d1f; margin-bottom: 10px; }
@@ -177,6 +179,47 @@
       text-align: center; padding: 4px 0; opacity: 0.6;
     }
     .btn-clear:hover { opacity: 1; }
+
+    /* ── Achievements ── */
+    .achieve-header {
+      display: flex; align-items: baseline; justify-content: space-between;
+      font-size: 15px; font-weight: 600; color: #1d1d1f; margin-bottom: 14px;
+    }
+    .achieve-streak { font-size: 13px; font-weight: 500; color: #30d158; }
+    .badges { display: flex; gap: 10px; }
+    .badge {
+      flex: 1; text-align: center;
+      background: #f5f5f7; border-radius: 12px; padding: 12px 6px 10px;
+      transition: all 0.2s;
+    }
+    .badge-icon { font-size: 28px; filter: grayscale(1); opacity: 0.35; }
+    .badge-name { font-size: 12px; color: #86868b; margin-top: 4px; font-weight: 500; }
+    .badge-date { font-size: 10px; color: #c7c7cc; margin-top: 2px; min-height: 12px; }
+    .badge.earned { background: #fff8e6; box-shadow: inset 0 0 0 1.5px #ffd60a55; }
+    .badge.earned .badge-icon { filter: none; opacity: 1; }
+    .badge.earned .badge-name { color: #1d1d1f; }
+    .badge.earned .badge-date { color: #b8860b; }
+    .achieve-hint { text-align: center; font-size: 12px; color: #86868b; margin-top: 12px; }
+
+    /* ── Share ── */
+    .share-code-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .share-code {
+      flex: 1; text-align: center;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 24px; font-weight: 700; letter-spacing: 6px;
+      color: #1d1d1f; background: #f5f5f7; border-radius: 10px; padding: 10px 0;
+      user-select: all; -webkit-user-select: all;
+    }
+    .btn-share-revoke {
+      flex-shrink: 0; background: none; border: 1.5px solid #e5e5ea; border-radius: 10px;
+      color: #ff453a; font-size: 13px; font-weight: 600; padding: 10px 14px;
+      cursor: pointer; font-family: inherit;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .watch-link {
+      display: block; text-align: center; font-size: 13px; color: #0071e3;
+      text-decoration: none; margin-top: 10px;
+    }
 
     /* ── Toast ── */
     .toast {
@@ -244,11 +287,34 @@
         </div>
       </div>
     </div>
+
+    <div class="card" id="achieveCard" style="display:none">
+      <div class="achieve-header">
+        <span>🏆 戒菸成就</span>
+        <span class="achieve-streak" id="achieveStreak"></span>
+      </div>
+      <div class="badges" id="badgesRow"></div>
+      <div class="achieve-hint" id="achieveHint"></div>
+    </div>
   </div>
 
   <!-- ── 設定頁面 ── -->
   <div id="pageSettings" style="display:none">
     <div class="card">
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">名稱</div>
+        </div>
+        <input class="setting-input wide" type="text" id="nicknameInput" maxlength="20" placeholder="未設定">
+      </div>
+
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">信箱</div>
+        </div>
+        <input class="setting-input wide" type="email" id="emailInput" maxlength="254" placeholder="選填">
+      </div>
+
       <div class="setting-row">
         <div>
           <div class="setting-label">抽菸間距（小時）</div>
@@ -261,6 +327,19 @@
         <div class="export-section-label">匯出紀錄</div>
         <button class="btn-export" id="btnExport" type="button">下載統計資料</button>
         <div class="export-hint">將過去一年每月抽菸次數匯出為文字檔</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="export-section" style="padding-top:0">
+        <div class="export-section-label">分享給家人</div>
+        <div class="share-code-row" id="shareCodeRow" style="display:none">
+          <div class="share-code" id="shareCode"></div>
+          <button class="btn-share-revoke" id="btnShareRevoke" type="button">撤銷</button>
+        </div>
+        <button class="btn-export" id="btnShareCreate" type="button" style="display:none">產生分享碼</button>
+        <div class="export-hint">家人在管理後台用此碼登入，即可查看你的紀錄與戒菸進度</div>
+        <a class="watch-link" href="admin.html">開啟管理後台 →</a>
       </div>
     </div>
 
@@ -361,7 +440,47 @@
       const data = await api('GET', '/settings');
       cooldownHours = data.cooldown_hours ?? 1;
       document.getElementById('cooldownInput').value = cooldownHours;
+      document.getElementById('nicknameInput').value = data.nickname ?? '';
+      document.getElementById('emailInput').value = data.email ?? '';
     } catch {}
+  }
+
+  // ── Achievements ───────────────────────────────────────────────────────────
+  async function loadAchievements() {
+    try {
+      const d = await api('GET', '/achievements');
+      renderAchievements(d);
+    } catch {}
+  }
+
+  function renderAchievements(d) {
+    const card = document.getElementById('achieveCard');
+    const hasBadges = (d.badges ?? []).length > 0;
+    if (d.streak_days === null && !hasBadges) { card.style.display = 'none'; return; }
+    card.style.display = '';
+
+    const streakEl = document.getElementById('achieveStreak');
+    streakEl.textContent = d.streak_days !== null ? `已 ${d.streak_days} 天沒抽菸` : '';
+
+    const earned = Object.fromEntries((d.badges ?? []).map(b => [b.badge, b.earned_at]));
+    document.getElementById('badgesRow').innerHTML = (d.thresholds ?? []).map(t => {
+      const at = earned[t.badge];
+      return `<div class="badge${at ? ' earned' : ''}">
+        <div class="badge-icon">${t.icon ?? '🏅'}</div>
+        <div class="badge-name">${t.label}</div>
+        <div class="badge-date">${at ? new Date(at).toLocaleDateString('zh-TW') : ''}</div>
+      </div>`;
+    }).join('');
+
+    const hint = document.getElementById('achieveHint');
+    const next = (d.thresholds ?? []).find(t => !earned[t.badge] && d.streak_days !== null && d.streak_days < t.days);
+    if (next) {
+      hint.textContent = `距離「${next.label}」成就還有 ${next.days - d.streak_days} 天，加油！`;
+    } else if ((d.thresholds ?? []).every(t => earned[t.badge])) {
+      hint.textContent = '全部成就達成 🎉';
+    } else {
+      hint.textContent = '';
+    }
   }
 
   function updateCounterUI() {
@@ -422,6 +541,7 @@
       await api('POST', '/smoke', { smoked_at: iso });
       todayRecords.push(iso);
       updateCounterUI(); updateHistoryUI(); updateCooldownUI();
+      loadAchievements();
       showToast('已記錄 ✓');
     } catch (e) {
       showToast(`記錄失敗：${e.message}`);
@@ -496,17 +616,35 @@
     });
   }
 
-  let settingsTimer;
-  async function saveSettings() {
-    const hours = Number.parseFloat(document.getElementById('cooldownInput').value);
-    if (Number.isNaN(hours) || hours < 0) { showToast('間距不可小於 0'); return; }
+  // ── Share ──────────────────────────────────────────────────────────────────
+  function renderShare(code) {
+    document.getElementById('shareCodeRow').style.display = code ? 'flex' : 'none';
+    document.getElementById('btnShareCreate').style.display = code ? 'none' : 'block';
+    document.getElementById('shareCode').textContent = code ?? '';
+  }
+
+  async function loadShare() {
     try {
-      await api('PUT', '/settings', { cooldown_hours: hours });
-      cooldownHours = hours;
-      updateCooldownUI();
-    } catch (e) {
-      showToast(`設定儲存失敗：${e.message}`);
-    }
+      const d = await api('GET', '/share');
+      renderShare(d.code);
+    } catch {}
+  }
+
+  async function createShare() {
+    try {
+      const d = await api('POST', '/share');
+      renderShare(d.code);
+      showToast('分享碼已產生 ✓');
+    } catch (e) { showToast(`產生失敗：${e.message}`); }
+  }
+
+  async function revokeShare() {
+    if (!confirm('確定要撤銷分享碼嗎？\n持有此碼的家人將無法再查看你的紀錄。')) return;
+    try {
+      await api('DELETE', '/share');
+      renderShare(null);
+      showToast('分享碼已撤銷 ✓');
+    } catch (e) { showToast(`撤銷失敗：${e.message}`); }
   }
 
   async function exportData() {
@@ -544,11 +682,12 @@
   }
 
   async function clearData() {
-    if (!confirm('確定要清除所有歷史資料嗎？此操作無法復原。')) return;
+    if (!confirm('確定要清除所有歷史資料嗎？此操作無法復原。\n（戒菸天數與已獲得的成就會保留）')) return;
     try {
       await api('DELETE', '/smoke/all');
       todayRecords = [];
       updateCounterUI(); updateHistoryUI(); updateCooldownUI();
+      loadAchievements();
       showToast('所有紀錄已清除 ✓');
     } catch (e) {
       showToast(`清除失敗：${e.message}`);
@@ -556,7 +695,9 @@
   }
 
   // ── Event listeners ────────────────────────────────────────────────────────
-  document.getElementById('btnGear').addEventListener('click', () => showPage('settings'));
+  document.getElementById('btnGear').addEventListener('click', () => { showPage('settings'); loadShare(); });
+  document.getElementById('btnShareCreate').addEventListener('click', createShare);
+  document.getElementById('btnShareRevoke').addEventListener('click', revokeShare);
   document.getElementById('btnBack').addEventListener('click', () => showPage('main'));
   document.getElementById('btnSmoke').addEventListener('click', addSmoke);
   document.getElementById('btnClear').addEventListener('click', clearData);
@@ -564,16 +705,47 @@
   document.getElementById('viewTabChart').addEventListener('click', () => switchView('chart'));
   document.getElementById('chartSelect').addEventListener('change', e => switchChartTab(e.target.value));
   document.getElementById('btnExport').addEventListener('click', exportData);
-  document.getElementById('cooldownInput').addEventListener('change', () => {
-    clearTimeout(settingsTimer);
-    settingsTimer = setTimeout(saveSettings, 800);
+  // 與 worker/src/index.ts 的驗證保持同步
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  // 設定欄位共用的 debounce 自動儲存
+  function autoSaveField(inputId, { parse = v => v || null, validate, invalidMsg = '格式不正確', build, okMsg, onSaved }) {
+    let timer;
+    document.getElementById(inputId).addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        const value = parse(document.getElementById(inputId).value.trim());
+        if (validate && !validate(value)) { showToast(invalidMsg); return; }
+        try {
+          await api('PUT', '/settings', build(value));
+          if (okMsg) showToast(okMsg);
+          onSaved?.(value);
+        } catch (e) { showToast(`儲存失敗：${e.message}`); }
+      }, 1000);
+    });
+  }
+  autoSaveField('cooldownInput', {
+    parse: v => Number.parseFloat(v),
+    validate: v => !Number.isNaN(v) && v >= 0,
+    invalidMsg: '間距不可小於 0',
+    build: v => ({ cooldown_hours: v }),
+    onSaved: v => { cooldownHours = v; updateCooldownUI(); },
+  });
+  autoSaveField('nicknameInput', {
+    build: v => ({ nickname: v }),
+    okMsg: '名稱已儲存 ✓',
+  });
+  autoSaveField('emailInput', {
+    validate: v => v === null || EMAIL_RE.test(v),
+    build: v => ({ email: v }),
+    okMsg: '信箱已儲存 ✓',
   });
 
   // ── Init ───────────────────────────────────────────────────────────────────
   document.getElementById('currentDate').textContent =
     new Date().toLocaleDateString('zh-TW', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-  await Promise.all([loadSettings(), loadToday()]);
+  await Promise.all([loadSettings(), loadToday(), loadAchievements()]);
 
   let currentTodayString = getTodayString();
   setInterval(() => {

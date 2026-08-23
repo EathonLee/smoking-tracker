@@ -1,0 +1,79 @@
+name: Deploy Worker
+
+on:
+  push:
+    # 不限分支：任何 push 都跑 check；deploy job 自己 guard 只在 main 執行
+    paths:
+      - 'worker/**'
+      - '.github/workflows/deploy-worker.yml'
+  pull_request:
+    paths:
+      - 'worker/**'
+  workflow_dispatch:
+
+jobs:
+  # 每次 push / PR 都跑：typecheck + migration 檔從零重播檢查
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - run: npm ci
+
+      - name: TypeScript typecheck
+        run: npx tsc --noEmit
+
+      # 在乾淨的本地 D1 上從 0001 開始重播所有 migration，
+      # 抓「改壞舊檔 / 順序衝突 / 重播失敗」這類問題（不需要 Cloudflare 認證）
+      - name: Migration replay check (fresh local D1)
+        run: npx wrangler d1 migrations apply smoking-tracker --local
+
+      - name: Verify final schema has expected tables
+        run: |
+          npx wrangler d1 execute smoking-tracker --local --json \
+            --command "SELECT name FROM sqlite_master WHERE type='table'" \
+            | grep -q achievements
+          npx wrangler d1 execute smoking-tracker --local --json \
+            --command "SELECT name FROM sqlite_master WHERE type='table'" \
+            | grep -q device_settings
+          npx wrangler d1 execute smoking-tracker --local --json \
+            --command "SELECT name FROM sqlite_master WHERE type='table'" \
+            | grep -q share_codes
+
+  # 只在 main 上跑（push 或手動觸發）：先套 migration 再部署 Worker
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - run: npm ci
+
+      - name: Apply D1 migrations (remote)
+        run: npx wrangler d1 migrations apply smoking-tracker --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Deploy Worker
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

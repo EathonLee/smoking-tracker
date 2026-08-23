@@ -15,6 +15,10 @@ iPhone 主畫面捷徑用的個人抽菸紀錄 App。前端為單一 HTML 靜態
 - 圖表：本月每日抽菸次數
 - 匯出今年每月統計為 `.txt` 檔案（1–12 月全顯示，無紀錄顯示 0）
 - 多裝置共用（家人、朋友），資料以 device UUID 隔離
+- 裝置可設定名稱與信箱（選填，供未來通知使用），管理後台能辨識是誰的紀錄
+- 戒菸成就：1 個月 🥉 / 3 個月 🥈 / 半年 🥇 沒抽菸獲得徽章（達成過永久保留）
+- 管理後台顯示各裝置最後開啟時間、IP、裝置型號、抽菸間距設定，並標記半年未活動的裝置、可手動刪除
+- 家人監護：產生分享碼給家人，家人用分享碼登入管理後台，唯讀查看**單一使用者**的完整統計（今日根數、圖表、紀錄、戒菸天數、成就、間距設定）；可隨時撤銷。管理者也可代為產碼
 
 ---
 
@@ -22,6 +26,7 @@ iPhone 主畫面捷徑用的個人抽菸紀錄 App。前端為單一 HTML 靜態
 
 ```
 index.html          → GitHub Pages（靜態前端）
+admin.html          → GitHub Pages（管理後台：Admin Key 看全部；分享碼只看單一使用者）
 worker/src/index.ts → Cloudflare Worker（API）
                        └── D1（SQLite 資料庫）
 ```
@@ -29,8 +34,12 @@ worker/src/index.ts → Cloudflare Worker（API）
 ### D1 Schema
 
 ```sql
-smoke_logs      (id, device_id, smoked_at)         -- 每筆抽菸紀錄
-device_settings (device_id, cooldown_hours, nickname)
+smoke_logs      (id, device_id, smoked_at)   -- 每筆抽菸紀錄
+device_settings (device_id, cooldown_hours, nickname, email,
+                 last_seen_at, last_ip, last_user_agent,  -- 每次 request 自動更新
+                 last_smoked_at)                          -- 快照，供成就計算
+achievements    (device_id, badge, earned_at)  -- badge: '1m' | '3m' | '6m'
+share_codes     (code, device_id, created_at, revoked_at)  -- 家人監護分享碼
 ```
 
 ### Worker API
@@ -39,15 +48,36 @@ device_settings (device_id, cooldown_hours, nickname)
 |--------|------|------|
 | `POST` | `/smoke` | 新增一筆紀錄 |
 | `DELETE` | `/smoke` | 刪除一筆紀錄 |
-| `DELETE` | `/smoke/all` | 清除所有紀錄 |
+| `DELETE` | `/smoke/all` | 清除所有紀錄（保留戒菸天數與成就） |
 | `GET` | `/smoke/today?date=YYYY-MM-DD` | 當日紀錄 |
 | `GET` | `/smoke/stats/hourly?date=YYYY-MM-DD` | 當日每小時統計 |
 | `GET` | `/smoke/stats/daily?month=YYYY-MM` | 當月每日統計 |
 | `GET` | `/settings` | 讀取裝置設定 |
-| `PUT` | `/settings` | 更新冷卻時間 |
+| `PUT` | `/settings` | 更新冷卻時間 / 名稱 / 信箱 |
+| `GET` | `/achievements` | 目前戒菸天數 + 已獲得徽章（同時結算新達成的徽章） |
+| `GET` | `/share` | 目前有效的分享碼 |
+| `POST` | `/share` | 產生分享碼（已有則回傳現有） |
+| `DELETE` | `/share` | 撤銷分享碼 |
 | `POST` | `/export` | 回傳今年每月統計（供前端下載） |
 
 所有 request 需帶 `x-device-id: <uuid>` header。
+
+監護人 API（憑分享碼授權，不需 header）：
+
+| Method | Path | 說明 |
+|--------|------|------|
+| `GET` | `/watch/:code?date&tz_offset` | 唯讀單人統計：暱稱、今日根數、時段分佈、每月趨勢、完整紀錄、戒菸天數、成就、間距設定（不含 IP／信箱／device_id） |
+
+Admin API（需帶 `x-admin-key` header）：
+
+| Method | Path | 說明 |
+|--------|------|------|
+| `GET` | `/admin/stats` | 全體統計 |
+| `GET` | `/admin/users` | 裝置列表（含名稱、最後開啟、IP、裝置型號） |
+| `GET` | `/admin/users/:id` | 單一裝置詳細 |
+| `DELETE` | `/admin/users/:id` | 刪除裝置所有資料（紀錄、設定、成就、分享碼） |
+| `POST` | `/admin/users/:id/share-code` | 代為產生分享碼 |
+| `DELETE` | `/admin/users/:id/share-code` | 撤銷分享碼 |
 
 ---
 

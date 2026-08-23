@@ -204,6 +204,23 @@
     }
     .btn-detail:hover { border-color: #0071e3; background: #f0f7ff; }
 
+    .btn-delete {
+      padding: 5px 12px; border: 1.5px solid #e5e5ea; border-radius: 7px;
+      background: #fff; color: #ff453a; font-size: 12px; font-weight: 600;
+      font-family: inherit; cursor: pointer; white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .btn-delete:hover { border-color: #ff453a; background: #fff5f5; }
+    .tag-stale {
+      display: inline-block; margin-left: 6px;
+      padding: 2px 7px; border-radius: 6px;
+      background: #fff2f0; color: #ff453a;
+      font-size: 11px; font-weight: 600; white-space: nowrap;
+    }
+    .td-nick { font-weight: 600; white-space: nowrap; }
+    .badge-dim { filter: grayscale(1); opacity: 0.3; }
+    .td-meta { font-size: 12px; color: #86868b; white-space: nowrap; }
+
     /* ── Detail page ── */
     .btn-back {
       display: inline-flex; align-items: center; gap: 6px;
@@ -247,8 +264,8 @@
   <div class="auth-card">
     <div class="auth-logo">🚬</div>
     <div class="auth-title">管理後台</div>
-    <div class="auth-sub">請輸入 Admin Key 以繼續</div>
-    <input class="auth-input" type="password" id="adminKeyInput" placeholder="Admin Key" autocomplete="current-password">
+    <div class="auth-sub">管理者輸入 Admin Key；家人輸入分享碼</div>
+    <input class="auth-input" type="password" id="adminKeyInput" placeholder="Admin Key 或分享碼" autocomplete="current-password">
     <button class="auth-btn" id="btnLogin">登入</button>
     <div class="auth-error" id="authError"></div>
   </div>
@@ -338,15 +355,19 @@
               <thead>
                 <tr>
                   <th>#</th>
+                  <th>名稱</th>
                   <th>裝置 ID</th>
                   <th>總計</th>
+                  <th title="首次至最後抽菸期間的終生平均">平均/日</th>
                   <th>最後抽菸</th>
-                  <th>首次記錄</th>
+                  <th>最後開啟</th>
+                  <th>裝置</th>
+                  <th>IP</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody id="usersTableBody">
-                <tr><td colspan="6"><div class="empty-state">載入中…</div></td></tr>
+                <tr><td colspan="10"><div class="empty-state">載入中…</div></td></tr>
               </tbody>
             </table>
           </div>
@@ -359,9 +380,11 @@
 
         <div class="card" style="margin-bottom:14px">
           <div class="card-header" style="margin-bottom:6px">
-            <div class="card-title">裝置 ID</div>
+            <div class="card-title" id="detailCardTitle">裝置 ID</div>
           </div>
           <div class="device-id-box" id="detailDeviceId"></div>
+          <div class="td-meta" id="detailMeta" style="margin-top:10px; white-space:normal;"></div>
+          <div class="td-meta" id="detailShare" style="margin-top:10px; white-space:normal;"></div>
         </div>
 
         <div class="stats-grid">
@@ -425,7 +448,11 @@
   const TZ_OFFSET = -new Date().getTimezoneOffset(); // minutes east of UTC
 
   let adminKey = localStorage.getItem('admin_key') || '';
+  let watchCode = localStorage.getItem('watch_code') || '';
   const charts = {};
+  const MS_PER_DAY = 86_400_000;
+  const USER_TABLE_COLS = 10;
+  const emptyRow = msg => `<tr><td colspan="${USER_TABLE_COLS}"><div class="empty-state">${msg}</div></td></tr>`;
 
   // ── Formatting ─────────────────────────────────────────────────────────────
 
@@ -445,7 +472,7 @@
   }
 
   function localDateStr(daysAgo = 0) {
-    return new Date(Date.now() + TZ_OFFSET * 60_000 - daysAgo * 86_400_000).toISOString().slice(0, 10);
+    return new Date(Date.now() + TZ_OFFSET * 60_000 - daysAgo * MS_PER_DAY).toISOString().slice(0, 10);
   }
 
   function localMonthStr() {
@@ -460,16 +487,23 @@
 
   // ── API ────────────────────────────────────────────────────────────────────
 
-  async function api(path, skipAuthRedirect = false) {
-    const res = await fetch(`${WORKER_URL}${path}`, {
-      headers: { 'x-admin-key': adminKey },
-    });
-    if (res.status === 401) {
-      if (!skipAuthRedirect) showAuth('連線已失效，請重新登入');
-      throw Object.assign(new Error('UNAUTHORIZED'), { status: 401 });
+  // 統一的 fetch + 錯誤包裝：非 2xx 一律丟出帶 status 的 Error
+  async function httpJson(url, fetchOpts = {}) {
+    const res = await fetch(url, fetchOpts);
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      throw Object.assign(new Error(e.error ?? `HTTP ${res.status}`), { status: res.status });
     }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
+  }
+
+  async function api(path, { method = 'GET', skipAuthRedirect = false } = {}) {
+    try {
+      return await httpJson(`${WORKER_URL}${path}`, { method, headers: { 'x-admin-key': adminKey } });
+    } catch (e) {
+      if (e.status === 401 && !skipAuthRedirect) showAuth('連線已失效，請重新登入');
+      throw e;
+    }
   }
 
   // ── Auth ───────────────────────────────────────────────────────────────────
@@ -488,11 +522,11 @@
   // ── Navigation ─────────────────────────────────────────────────────────────
 
   function navigate(page, userId = null) {
+    const showDetail = page === 'detail' || page === 'watch';
     document.getElementById('pageOverview').style.display = page === 'overview' ? '' : 'none';
     document.getElementById('pageUsers').style.display    = page === 'users'    ? '' : 'none';
-    document.getElementById('pageDetail').style.display   = page === 'detail'   ? '' : 'none';
+    document.getElementById('pageDetail').style.display   = showDetail          ? '' : 'none';
 
-    const navPages = ['overview', 'users'];
     document.querySelectorAll('[data-page]').forEach(el => {
       el.classList.toggle('active', el.dataset.page === page || (page === 'detail' && el.dataset.page === 'users'));
     });
@@ -500,6 +534,7 @@
     if (page === 'overview') loadOverview();
     else if (page === 'users') loadUsers();
     else if (page === 'detail' && userId) loadDetail(userId);
+    else if (page === 'watch') loadWatchDetail();
   }
 
   // ── Charts ─────────────────────────────────────────────────────────────────
@@ -556,33 +591,106 @@
   // ── Users ──────────────────────────────────────────────────────────────────
 
   async function loadUsers() {
-    document.getElementById('usersTableBody').innerHTML =
-      '<tr><td colspan="6"><div class="empty-state">載入中…</div></td></tr>';
+    document.getElementById('usersTableBody').innerHTML = emptyRow('載入中…');
     try {
       const d = await api('/admin/users');
       renderUsers(d.users);
     } catch (e) {
       if (e.status !== 401) {
-        document.getElementById('usersTableBody').innerHTML =
-          '<tr><td colspan="6"><div class="empty-state">載入失敗</div></td></tr>';
+        document.getElementById('usersTableBody').innerHTML = emptyRow('載入失敗');
       }
+    }
+  }
+
+  function deviceModel(ua) {
+    if (!ua) return '-';
+    if (/iPhone/.test(ua)) return 'iPhone';
+    if (/iPad/.test(ua)) return 'iPad';
+    if (/Android/.test(ua)) {
+      const m = /Android[^;]*;\s*([^);]+)/.exec(ua);
+      return m ? m[1].trim() : 'Android';
+    }
+    if (/Macintosh/.test(ua)) return 'Mac';
+    if (/Windows/.test(ua)) return 'Windows';
+    return ua.slice(0, 18);
+  }
+
+  const STALE_DAYS = 180;
+  function lastActivity(u) {
+    const times = [u.last_seen_at, u.last_smoked_at].filter(Boolean).map(Date.parse);
+    return times.length ? Math.max(...times) : null;
+  }
+  // 回傳標籤 HTML：超過半年沒活動、或完全沒有活動資料（最可能是廢棄裝置）
+  function staleTag(u) {
+    const t = lastActivity(u);
+    if (t === null) return '<span class="tag-stale">無活動紀錄</span>';
+    if ((Date.now() - t) > STALE_DAYS * MS_PER_DAY) return '<span class="tag-stale">半年未活動</span>';
+    return '';
+  }
+
+  function avgPerDay(u) {
+    if (!u.total || !u.first_smoked_at || !u.last_smoked_at) return '-';
+    const days = Math.max(1, Math.round((Date.parse(u.last_smoked_at) - Date.parse(u.first_smoked_at)) / MS_PER_DAY) + 1);
+    return (u.total / days).toFixed(1);
+  }
+
+  // admin 可代為產生分享碼（使用者不主動分享時，由管理者發碼給家人）
+  function renderShareCode(deviceId, code) {
+    const el = document.getElementById('detailShare');
+    if (code) {
+      el.innerHTML = `分享碼：<b style="font-family:monospace;letter-spacing:2px">${escHtml(code)}</b>
+        <button class="btn-delete" id="btnShareRevoke" style="margin-left:8px">撤銷</button>
+        <span style="margin-left:6px">（家人在監護頁輸入此碼即可查看）</span>`;
+      document.getElementById('btnShareRevoke').addEventListener('click', async () => {
+        if (!confirm('確定要撤銷此分享碼嗎？持有此碼的家人將無法再查看。')) return;
+        try {
+          await api(`/admin/users/${encodeURIComponent(deviceId)}/share-code`, { method: 'DELETE' });
+          renderShareCode(deviceId, null);
+        } catch (e) { if (e.status !== 401) alert(`撤銷失敗：${e.message}`); }
+      });
+    } else {
+      el.innerHTML = `分享碼：無
+        <button class="btn-detail" id="btnShareCreate" style="margin-left:8px">產生分享碼</button>`;
+      document.getElementById('btnShareCreate').addEventListener('click', async () => {
+        try {
+          const d = await api(`/admin/users/${encodeURIComponent(deviceId)}/share-code`, { method: 'POST' });
+          renderShareCode(deviceId, d.code);
+        } catch (e) { if (e.status !== 401) alert(`產生失敗：${e.message}`); }
+      });
+    }
+  }
+
+  async function deleteUser(id, name) {
+    if (!confirm(`確定要刪除「${name}」的所有資料嗎？\n包含抽菸紀錄、設定、成就與分享碼，無法復原。`)) return;
+    try {
+      await api(`/admin/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      loadUsers();
+    } catch (e) {
+      if (e.status !== 401) alert(`刪除失敗：${e.message}`);
     }
   }
 
   function renderUsers(users) {
     const tbody = document.getElementById('usersTableBody');
     if (!users.length) {
-      tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state">暫無資料</div></td></tr>';
+      tbody.innerHTML = emptyRow('暫無資料');
       return;
     }
     tbody.innerHTML = users.map((u, i) => `
       <tr data-id="${escHtml(u.device_id)}">
         <td class="td-num">${i + 1}</td>
+        <td class="td-nick">${u.nickname ? escHtml(u.nickname) : '<span style="color:#c7c7cc">未命名</span>'}${staleTag(u)}</td>
         <td class="td-device" title="${escHtml(u.device_id)}">${fmtDeviceId(u.device_id)}</td>
         <td class="td-count">${u.total}</td>
-        <td>${fmtDateTime(u.last_smoked_at)}</td>
-        <td>${fmtDateTime(u.first_smoked_at)}</td>
-        <td><button class="btn-detail" data-id="${escHtml(u.device_id)}">詳細 →</button></td>
+        <td>${avgPerDay(u)}</td>
+        <td class="td-meta">${fmtDateTime(u.last_smoked_at)}</td>
+        <td class="td-meta">${fmtDateTime(u.last_seen_at)}</td>
+        <td class="td-meta">${escHtml(deviceModel(u.last_user_agent))}</td>
+        <td class="td-meta">${escHtml(u.last_ip ?? '-')}</td>
+        <td style="white-space:nowrap">
+          <button class="btn-detail" data-id="${escHtml(u.device_id)}">詳細 →</button>
+          <button class="btn-delete" data-id="${escHtml(u.device_id)}" data-name="${escHtml(u.nickname ?? fmtDeviceId(u.device_id))}">刪除</button>
+        </td>
       </tr>
     `).join('');
 
@@ -592,18 +700,23 @@
     tbody.querySelectorAll('.btn-detail').forEach(btn => {
       btn.addEventListener('click', e => { e.stopPropagation(); navigate('detail', btn.dataset.id); });
     });
+    tbody.querySelectorAll('.btn-delete').forEach(btn => {
+      btn.addEventListener('click', e => { e.stopPropagation(); deleteUser(btn.dataset.id, btn.dataset.name); });
+    });
   }
 
   // ── User Detail ────────────────────────────────────────────────────────────
 
-  async function loadDetail(userId) {
-    document.getElementById('detailDeviceId').textContent = userId;
+  function resetDetailLoading() {
     ['detailTotal', 'detailMonth', 'detailWeek'].forEach(id => {
       document.getElementById(id).textContent = '…';
     });
     document.getElementById('detailLogsBody').innerHTML =
       '<tr><td colspan="3"><div class="empty-state">載入中…</div></td></tr>';
+  }
 
+  async function loadDetail(userId) {
+    resetDetailLoading();
     try {
       const d = await api(`/admin/users/${encodeURIComponent(userId)}?tz_offset=${TZ_OFFSET}`);
       renderDetail(d);
@@ -616,6 +729,40 @@
   }
 
   function renderDetail(d) {
+    document.getElementById('detailCardTitle').textContent = '裝置 ID';
+    document.getElementById('detailDeviceId').textContent = d.device_id;
+    document.getElementById('detailMeta').innerHTML = [
+      d.nickname ? `名稱：<b>${escHtml(d.nickname)}</b>` : '名稱：未命名',
+      `信箱：${escHtml(d.email ?? '-')}`,
+      `抽菸間距：${d.cooldown_hours === null ? '-' : d.cooldown_hours > 0 ? `${d.cooldown_hours} 小時` : '不限制'}`,
+      `最後開啟：${fmtDateTime(d.last_seen_at)}`,
+      `IP：${escHtml(d.last_ip ?? '-')}`,
+      `裝置：${escHtml(deviceModel(d.last_user_agent))}`,
+    ].join('　·　');
+
+    renderShareCode(d.device_id, d.share_code);
+    renderDetailStats(d);
+  }
+
+  // 監護人（分享碼）視角：同一個詳細頁，但只露名稱/間距/成就，不露 IP/UA/信箱/裝置 ID
+  function renderWatchDetail(d) {
+    document.getElementById('detailCardTitle').textContent = '使用者';
+    document.getElementById('detailDeviceId').textContent = d.nickname ?? '未命名';
+    const earned = new Set((d.badges ?? []).map(b => b.badge));
+    const badges = (d.thresholds ?? []).map(t =>
+      `<span title="${escHtml(t.label)}" class="${earned.has(t.badge) ? '' : 'badge-dim'}">${t.icon ?? '🏅'}</span>`
+    ).join('');
+    document.getElementById('detailMeta').innerHTML = [
+      `抽菸間距：${d.cooldown_hours > 0 ? `${d.cooldown_hours} 小時` : '不限制'}`,
+      `今日：${d.today_count} 根`,
+      d.streak_days !== null ? `已戒：${d.streak_days} 天` : null,
+      `成就：${badges}`,
+    ].filter(Boolean).join('　·　');
+    document.getElementById('detailShare').innerHTML = '';
+    renderDetailStats(d);
+  }
+
+  function renderDetailStats(d) {
     const offsetMs = TZ_OFFSET * 60_000;
 
     // Stat cards
@@ -625,9 +772,9 @@
     // This week (Mon–Sun)
     const localNow = new Date(Date.now() + offsetMs);
     const dow = localNow.getUTCDay(); // 0=Sun
-    const mondayMs = localNow.getTime() - (dow === 0 ? 6 : dow - 1) * 86_400_000;
+    const mondayMs = localNow.getTime() - (dow === 0 ? 6 : dow - 1) * MS_PER_DAY;
     const mondayStr = new Date(mondayMs).toISOString().slice(0, 10);
-    const sundayStr = new Date(mondayMs + 6 * 86_400_000).toISOString().slice(0, 10);
+    const sundayStr = new Date(mondayMs + 6 * MS_PER_DAY).toISOString().slice(0, 10);
     const weekCount = d.logs.filter(iso => {
       const day = new Date(Date.parse(iso) + offsetMs).toISOString().slice(0, 10);
       return day >= mondayStr && day <= sundayStr;
@@ -662,6 +809,37 @@
     }).join('');
   }
 
+  // ── Watch (share-code) mode ────────────────────────────────────────────────
+
+  function fetchWatch(code) {
+    return httpJson(`${WORKER_URL}/watch/${encodeURIComponent(code)}?tz_offset=${TZ_OFFSET}&date=${localDateStr()}`);
+  }
+
+  async function loadWatchDetail() {
+    resetDetailLoading();
+    try {
+      renderWatchDetail(await fetchWatch(watchCode));
+    } catch (e) {
+      if (e.status === 404) {
+        watchCode = '';
+        localStorage.removeItem('watch_code');
+        showAuth('分享碼已失效或被撤銷');
+      } else {
+        document.getElementById('detailLogsBody').innerHTML =
+          '<tr><td colspan="3"><div class="empty-state">載入失敗</div></td></tr>';
+      }
+    }
+  }
+
+  function enterWatchMode() {
+    hideAuth();
+    // 監護人只有單一使用者的權限：藏掉全域導覽，其餘交給 navigate()
+    document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => { el.style.display = 'none'; });
+    document.querySelector('.mobile-tabs').style.display = 'none';
+    document.getElementById('btnBack').style.display = 'none';
+    navigate('watch');
+  }
+
   // ── Event listeners ────────────────────────────────────────────────────────
 
   document.querySelectorAll('[data-page]').forEach(btn => {
@@ -676,8 +854,8 @@
 
   document.getElementById('btnLogout').addEventListener('click', () => {
     localStorage.removeItem('admin_key');
-    adminKey = '';
-    showAuth();
+    localStorage.removeItem('watch_code');
+    location.reload();
   });
 
   document.getElementById('btnLogin').addEventListener('click', async () => {
@@ -686,13 +864,24 @@
     adminKey = key;
     document.getElementById('authError').textContent = '';
     try {
-      await api(`/admin/stats?tz_offset=0&days=1`, true);
+      await api(`/admin/stats?tz_offset=0&days=1`, { skipAuthRedirect: true });
       localStorage.setItem('admin_key', adminKey);
       hideAuth();
       navigate('overview');
     } catch (e) {
+      adminKey = '';
       if (e.status === 401 || e.message === 'UNAUTHORIZED') {
-        document.getElementById('authError').textContent = 'Admin Key 錯誤，請重試';
+        // 不是 Admin Key → 試著當分享碼用
+        try {
+          const code = key.toUpperCase();
+          await fetchWatch(code);
+          watchCode = code;
+          localStorage.setItem('watch_code', watchCode);
+          enterWatchMode();
+        } catch (e2) {
+          document.getElementById('authError').textContent =
+            e2.status === 404 ? 'Admin Key 或分享碼無效' : `連線錯誤：${e2.message}`;
+        }
       } else {
         document.getElementById('authError').textContent = `連線錯誤：${e.message}`;
       }
@@ -705,11 +894,13 @@
 
   // ── Init ───────────────────────────────────────────────────────────────────
 
-  if (!adminKey) {
-    showAuth();
-  } else {
+  if (adminKey) {
     hideAuth();
     navigate('overview');
+  } else if (watchCode) {
+    enterWatchMode();
+  } else {
+    showAuth();
   }
 </script>
 </body>
