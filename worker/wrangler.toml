@@ -1,5 +1,6 @@
 name = "smoking-tracker"
 main = "src/index.ts"
+account_id = "2bed913cbff7466282dcf476e42c376f"
 compatibility_date = "2024-09-23"
 workers_dev = true
 
